@@ -3,23 +3,28 @@
 //! # config.toml example
 //!
 //! ```toml
-//! path = "C:\\Program Files\\Oracle\\VirtualBox\\VBoxManage.exe"
-//! vm = "MyVM"
-//! guest_username = "user"
-//! guest_password = "password"
+//! vboxmanage_path = "C:\\Program Files\\Oracle\\VirtualBox\\VBoxManage.exe"
+//! vboxmanage_vm = "MyVM"
+//! vboxmanage_guest_username = "user"
+//! vboxmanage_guest_password = "password"
 //! ```
+
+mod cmd_test;
+
 #[cfg(test)]
 mod tests {
     use hvctrl::types::*;
     use hvctrl::virtualbox::VBoxManage;
     use serde::{Serialize, Deserialize};
+    use crate::cmd_test;
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VBoxManageConfig {
         vboxmanage_path: Option<String>,
         vboxmanage_vm: Option<String>,
-        guest_username: Option<String>,
-        guest_password: Option<String>,
+        vboxmanage_guest_username: Option<String>,
+        vboxmanage_guest_password: Option<String>,
+        vboxmanage_encoding: Option<String>,
     }
 
     fn assert_uuid(x: &str) {
@@ -34,8 +39,9 @@ mod tests {
                 let mut cmd = VBoxManage::new();
                 if let Some(x) = config.vboxmanage_path { cmd = cmd.executable_path(x); }
                 if let Some(x) = config.vboxmanage_vm { cmd = cmd.vm(x); }
-                if let Some(x) = config.guest_username { cmd = cmd.guest_username(x); }
-                if let Some(x) = config.guest_password { cmd = cmd.guest_password(x); }
+                if let Some(x) = config.vboxmanage_guest_username { cmd = cmd.guest_username(x); }
+                if let Some(x) = config.vboxmanage_guest_password { cmd = cmd.guest_password(x); }
+                if let Some(x) = config.vboxmanage_encoding { cmd = cmd.encoding(&x); }
                 cmd
             }
             Err(e) => panic!("Filed to parse config.toml: {}", e),
@@ -60,6 +66,11 @@ mod tests {
     #[test]
     fn start_test() {
         println!("{:?}", get_cmd().start());
+    }
+
+    #[test]
+    fn show_vm_info_test() {
+        println!("{:?}", get_cmd().show_vm_info());
     }
 
     #[test]
@@ -90,6 +101,11 @@ mod tests {
     }
 
     #[test]
+    fn resume_test() {
+        println!("{:?}", get_cmd().resume());
+    }
+
+    #[test]
     fn run_command_test() {
         println!("{:?}", get_cmd().run_command(&["C:\\Windows\\notepad.exe"]));
     }
@@ -102,5 +118,52 @@ mod tests {
     #[test]
     fn copy_to_test() {
         println!("{:?}", get_cmd().copy_to("C:\\Windows\\notepad.exe", "C:\\test"));
+    }
+
+    #[test]
+    fn take_sn_test() {
+        println!("{:?}", get_cmd().take_snapshot("sn_test", None, true));
+    }
+
+    #[test]
+    fn delete_sn() {
+        println!("{:?}", get_cmd().take_snapshot("sn_test", None, true));
+        println!("{:?}", get_cmd().delete_snapshot("sn_test"));
+    }
+
+    #[test]
+    fn list_sn(){
+        println!("{:?}",get_cmd().list_snapshots());
+    }
+
+    #[test]
+    fn hard_reboot_a_test() {
+        let cmd = get_cmd();
+        println!("{:?}", cmd.hard_stop());
+        println!("{:?}", cmd.show_vm_info());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+        println!("{:?}", cmd.start());
+    }
+
+    #[test]
+    fn power_test() {
+        let cmd = get_cmd();
+        cmd_test::power_test(&cmd);
+    }
+
+    #[test]
+    fn snapshot_test() {
+        let cmd = get_cmd();
+        cmd_test::snapshot_test(&cmd);
     }
 }

@@ -1,6 +1,31 @@
+use encoding_rs::Encoding;
 use serde::{Serialize, Deserialize};
+use std::borrow::Cow;
+use std::process::Command;
 
-#[derive(Debug, Eq, PartialEq)]
+pub(crate) fn decode(encoding: &'static Encoding, b: &[u8]) -> String {
+    let (text, _, _) = encoding.decode(b);
+    if let Cow::Owned(s) = text {
+        return s;
+    }
+    unsafe {
+        // decoding returned Cow::Borrowed, meaning these bytes
+        // are already valid utf8
+        String::from_utf8_unchecked(b.to_vec())
+    }
+}
+
+/// Returns (stdout, stderr).
+pub(crate) fn exec_cmd(encoding: &'static Encoding, cmd: &mut Command) -> VMResult<(String, String)> {
+    match cmd.output() {
+        Ok(o) => {
+            Ok((decode(encoding, &o.stdout), decode(encoding, &o.stderr)))
+        }
+        Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string())))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct VMError {
     repr: Repr,
 }
@@ -13,13 +38,13 @@ impl std::fmt::Display for VMError {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Repr {
     Simple(ErrorKind),
     Unknown(String),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ErrorKind {
     AuthenticationFailed,
     ExecutionFailed(String),
@@ -28,8 +53,8 @@ pub enum ErrorKind {
     SnapshotNotFound,
     UnexpectedResponse(String),
     UnsupportedCommand,
-    VMIsNotPoweredOn,
-    VMIsPoweredOn,
+    VMIsNotRunning,
+    VMIsRunning,
     VMNotFound,
 }
 
@@ -48,42 +73,65 @@ impl From<ErrorKind> for VMError {
 pub type VMResult<T> = Result<T, VMError>;
 
 pub trait PowerCmd {
+    /// Starts a VM and waits for the VM to start.
+    /// This sould implemented
     fn start(&self) -> VMResult<()>;
+    /// Stops a VM softly and waits for the VM to stop.
     fn stop(&self) -> VMResult<()>;
+    /// Stops a VM hardly and waits for the VM to stop.
     fn hard_stop(&self) -> VMResult<()>;
+    /// Suspends a VM and waits for the VM to suspend.
     fn suspend(&self) -> VMResult<()>;
+    /// Resumes a VM and waits for the VM to start.
     fn resume(&self) -> VMResult<()>;
     fn is_running(&self) -> VMResult<bool>;
+    /// Reboots a VM softly and waits for the VM to start.
     fn reboot(&self) -> VMResult<()>;
+    /// Reboots a VM hardly and waits for the VM to start.
     fn hard_reboot(&self) -> VMResult<()>;
+    /// Pauses a VM and waits for the VM to pause.
     fn pause(&self) -> VMResult<()>;
+    /// Unpauses a VM and waits for the VM to unpause.
     fn unpause(&self) -> VMResult<()>;
 }
 
 pub trait SnapshotCmd {
-    fn list_snapshots(&mut self) -> VMResult<Vec<Snapshot>>;
-    fn take_snapshot(&mut self, name: &str) -> VMResult<()>;
-    fn revert_snapshot(&mut self, name: &str) -> VMResult<()>;
-    fn delete_snapshot(&mut self, name: &str) -> VMResult<()>;
+    /// Returns snapshots of a VM.
+    fn list_snapshots(&self) -> VMResult<Vec<Snapshot>>;
+    /// Takes a snapshot of a VM.
+    fn take_snapshot(&self, name: &str) -> VMResult<()>;
+    /// Reverts the current VM state to a snapshot of the VM.
+    fn revert_snapshot(&self, name: &str) -> VMResult<()>;
+    /// Deletes a snapshot of a VM.
+    fn delete_snapshot(&self, name: &str) -> VMResult<()>;
 }
 
 pub trait GuestCmd {
+    /// Runs a command in guest.
     fn run_command(&self, guest_args: &[&str]) -> VMResult<()>;
-    fn copy_from_guest_to_host(&mut self, from_guest_path: &str, to_host_path: &str) -> VMResult<()>;
-    fn copy_from_host_to_guest(&mut self, from_host_path: &str, to_guest_path: &str) -> VMResult<()>;
+    /// Copies a file from a guest to a host.
+    fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str) -> VMResult<()>;
+    /// Copies a file from a host to a guest.
+    fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str) -> VMResult<()>;
 }
 
 pub trait NICCmd {
+    /// Returns NICs of a VM.
     fn list_nics(&self) -> VMResult<Vec<NIC>>;
 }
 
 pub trait SharedFolderCmd {
+    /// Returns shared folders of a VM.
     fn list_shared_folders(&self) -> VMResult<Vec<SharedFolder>>;
-    fn mount_shared_folder(&self) -> VMResult<()>;
-    fn unmount_shared_folder(&self) -> VMResult<()>;
+    /// Mounts a shared folder to a VM.
+    fn mount_shared_folder(&self, name: &str) -> VMResult<()>;
+    /// Unmounts a shared folder to a VM.
+    fn unmount_shared_folder(&self, name: &str) -> VMResult<()>;
+    /// Deletes a snapshot of a VM.
+    fn delete_shared_folder(&self, name: &str) -> VMResult<()>;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct VM {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -105,7 +153,7 @@ impl PartialEq for VM {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct Snapshot {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -125,7 +173,7 @@ impl PartialEq for Snapshot {
 }
 
 /// Represents NIC type.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize)]
 pub enum NICType {
     Bridge,
     NAT,
@@ -133,7 +181,7 @@ pub enum NICType {
     Custom,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct NIC {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -141,11 +189,25 @@ pub struct NIC {
     pub mac_address: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct SharedFolder {
     pub id: Option<String>,
     pub name: Option<String>,
     pub guest_path: Option<String>,
     pub host_path: Option<String>,
     pub is_readonly: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum VMPowerState {
+    Running,
+    Stopped,
+    Suspended,
+    Paused,
+    Unknown,
+}
+
+impl VMPowerState {
+    #[inline]
+    pub fn is_running(&self) -> bool { *self == Self::Running }
 }

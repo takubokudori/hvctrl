@@ -15,15 +15,6 @@ pub struct VMPlayerRest {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum VMPowerState {
-    Running,
-    Stop,
-    Suspend,
-    Pause,
-    Unknown,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub enum VMRestPowerCommand {
     On,
     Off,
@@ -180,7 +171,7 @@ impl VMPlayerRest {
     fn handle_json_error(s: &str) -> VMError {
         match s {
             "Authentication failed" => VMError::from(ErrorKind::AuthenticationFailed),
-            "The virtual machine is not powered on" => VMError::from(ErrorKind::VMIsNotPoweredOn),
+            "The virtual machine is not powered on" => VMError::from(ErrorKind::VMIsNotRunning),
             _ => VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
         }
     }
@@ -226,8 +217,8 @@ impl VMPlayerRest {
         let r: Resp = Self::deserialize(&s)?;
         match r.power_state.as_str() {
             "poweredOn" => Ok(VMPowerState::Running),
-            "poweredOff" => Ok(VMPowerState::Stop),
-            "suspended" => Ok(VMPowerState::Suspend),
+            "poweredOff" => Ok(VMPowerState::Stopped),
+            "suspended" => Ok(VMPowerState::Suspended),
             x => Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
         }
     }

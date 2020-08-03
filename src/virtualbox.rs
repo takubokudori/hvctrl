@@ -1,23 +1,9 @@
 use crate::types::*;
+use crate::types::ErrorKind::UnexpectedResponse;
+use encoding_rs::Encoding;
 use std::process::Command;
+use std::time::Duration;
 
-/// Returns (stdout, stderr).
-fn execute(cmd: &mut Command) -> VMResult<(String, String)> {
-    match cmd.output() {
-        Ok(o) => {
-            let stdout = match String::from_utf8(o.stdout) {
-                Ok(s) => s,
-                Err(x) => return Err(VMError::from(Repr::Unknown(format!("Failed to convert stdout: {}", x.to_string())))),
-            };
-            let stderr = match String::from_utf8(o.stderr) {
-                Ok(s) => s,
-                Err(x) => return Err(VMError::from(Repr::Unknown(format!("Failed to convert stderr: {}", x.to_string())))),
-            };
-            Ok((stdout, stderr))
-        }
-        Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string())))
-    }
-}
 
 pub struct VBoxManage {
     path: String,
@@ -26,6 +12,7 @@ pub struct VBoxManage {
     guest_password: Option<String>,
     guest_password_file: Option<String>,
     guest_domain: Option<String>,
+    encoding: &'static Encoding,
 }
 
 impl VBoxManage {
@@ -37,6 +24,7 @@ impl VBoxManage {
             guest_password: None,
             guest_password_file: None,
             guest_domain: None,
+            encoding: encoding_rs::UTF_8,
         }
     }
 
@@ -70,6 +58,11 @@ impl VBoxManage {
         self
     }
 
+    pub fn encoding(mut self, encoding_name: &str) -> Self {
+        self.encoding = Encoding::for_label(encoding_name.as_bytes()).expect("Invalid encoding");
+        self
+    }
+
     fn build_auth(&self) -> Vec<&str> {
         let mut v = vec![];
         if let Some(x) = &self.guest_username { v.extend(&["--username", x]); }
@@ -94,11 +87,14 @@ impl VBoxManage {
             let s = s.lines().last().unwrap();
             return Err(VMError::from(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string())));
         }
+        if s.starts_with("Invalid machine state: PoweredOff") || s.starts_with("Machine in invalid state 1 -- powered off") {
+            return Err(VMError::from(ErrorKind::VMIsNotRunning));
+        }
         if s.ends_with(" is not currently running") || s.find("is not running").is_some() {
-            return Err(VMError::from(ErrorKind::VMIsNotPoweredOn));
+            return Err(VMError::from(ErrorKind::VMIsNotRunning));
         }
         if s.lines().next().unwrap().ends_with("is already locked by a session (or being locked or unlocked)") {
-            return Err(VMError::from(ErrorKind::VMIsPoweredOn));
+            return Err(VMError::from(ErrorKind::VMIsRunning));
         }
         Err(VMError::from(Repr::Unknown(format!("Unknown error: {}", s))))
     }
@@ -113,8 +109,8 @@ impl VBoxManage {
         }
     }
 
-    fn vbox_exec(cmd: &mut Command) -> VMResult<String> {
-        let (stdout, stderr) = execute(cmd)?;
+    fn vbox_exec(&self, cmd: &mut Command) -> VMResult<String> {
+        let (stdout, stderr) = exec_cmd(self.encoding, cmd)?;
         if stderr.len() != 0 {
             Self::check(stderr)
         } else {
@@ -124,8 +120,8 @@ impl VBoxManage {
 
     /// Returns VMResult<()>.
     #[inline]
-    fn vbox_exec2(cmd: &mut Command) -> VMResult<()> {
-        Self::vbox_exec(cmd)?;
+    fn vbox_exec2(&self, cmd: &mut Command) -> VMResult<()> {
+        self.vbox_exec(cmd)?;
         Ok(())
     }
 
@@ -133,11 +129,11 @@ impl VBoxManage {
     fn cmd(&self) -> Command { Command::new(&self.path) }
 
     pub fn version(&self) -> VMResult<String> {
-        Ok(Self::vbox_exec(self.cmd().arg("-v"))?.trim().to_string())
+        Ok(self.vbox_exec(self.cmd().arg("-v"))?.trim().to_string())
     }
 
     pub fn list_vms(&self) -> VMResult<Vec<VM>> {
-        let s = Self::vbox_exec(self.cmd().args(&["list", "vms"]))?;
+        let s = self.vbox_exec(self.cmd().args(&["list", "vms"]))?;
         // "vm name" {uuid}
         Ok(s.lines()
             .map(|x| {
@@ -150,53 +146,143 @@ impl VBoxManage {
             }).collect())
     }
 
+    pub fn show_vm_info(&self) -> VMResult<String> {
+        self.vbox_exec(self.cmd().args(&["showvminfo", &self.vm, "--machinereadable"]))
+    }
+
     pub fn start_vm(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["startvm", &self.vm]))
+        self.vbox_exec2(self.cmd().args(&["startvm", &self.vm]))
     }
 
-    pub fn poweron(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "poweron"]))
+    pub fn poweroff_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "poweroff"]))
     }
 
-    pub fn poweroff(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "poweroff"]))
+    /// Sends ACPI shutdown signal.
+    ///
+    /// If the VM is running, this function returns Ok(()) regardless of whether the VM was shut down.
+    pub fn acpi_power_button_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "acpipowerbutton"]))
     }
 
-    pub fn acpi_power_button(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "acpipowerbutton"]))
+    pub fn reset_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "reset"]))
     }
 
-    pub fn reset(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "reset"]))
+    pub fn pause_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "pause"]))
     }
 
-    pub fn pause(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "pause"]))
+    pub fn resume_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "resume"]))
     }
 
-    pub fn resume(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "resume"]))
-    }
-
-    pub fn save_state(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "savestate"]))
+    pub fn save_state_vm(&self) -> VMResult<()> {
+        self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "savestate"]))
     }
 
     /// Returns (name, UUID).
     pub fn list_snapshots(&self) -> VMResult<Vec<Snapshot>> {
-        let s = Self::vbox_exec(self.cmd().args(&["snapshot", &self.vm, "list"]))?;
-        Ok(s.lines()
-            .map(|x| {
-                // "   Name: ss_name (UUID: ....)"
-                let pos = x.rfind(" ").unwrap(); // UUID pos
-                let name = &x.trim_start()[6..pos];
-                let uuid = &x[pos + 2..x.len() - 1];
-                Snapshot {
-                    id: Some(uuid.to_string()),
-                    name: Some(name.to_string()),
-                    detail: None,
+        const SN_NAME: &str = "SnapshotName";
+        const SN_UUID: &str = "SnapshotUUID";
+        const SN_DESC: &str = "SnapshotDescription";
+        #[derive(Eq, PartialEq)]
+        enum State {
+            Init,
+            Name,
+            UUID,
+            Desc,
+            DescCont,
+        }
+        let s = self.vbox_exec(self.cmd().args(&["snapshot", &self.vm, "list", "--machinereadable"]))?;
+        let mut last_state = State::Init;
+
+        let mut ret = vec![];
+        let mut sn = Snapshot {
+            id: None,
+            name: None,
+            detail: None,
+        };
+        let mut cur_detail = "".to_string();
+        for x in s.lines() {
+            let now_data = if x.starts_with(SN_NAME) {
+                State::Name
+            } else if x.starts_with(SN_UUID) {
+                State::UUID
+            } else if x.starts_with(SN_DESC) {
+                State::Desc
+            } else if x.starts_with("CurrentSnapshotName=\"") {
+                // End
+                if last_state == State::Desc || last_state == State::DescCont {
+                    cur_detail.pop(); // Remove last "
+                    return Ok(ret);
+                } else { return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))); }
+            } else {
+                State::DescCont
+            };
+            match last_state {
+                State::Init => {
+                    match now_data {
+                        State::Name => {
+                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
+                            last_state = State::Name;
+                        }
+                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                    }
                 }
-            }).collect())
+                State::Name => {
+                    match now_data {
+                        State::UUID => {
+                            sn.id = Some(x[SN_UUID.len()..x.len() - 1].to_string());
+                            last_state = State::UUID;
+                        }
+                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                    }
+                }
+                State::UUID => {
+                    match now_data {
+                        State::Desc => {
+                            sn.detail = Some(x[SN_DESC.len()..x.len() - 1].to_string());
+                            last_state = State::Desc;
+                        }
+                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                    }
+                }
+                State::Desc => {
+                    match now_data {
+                        State::Name => {
+                            sn.detail = Some(cur_detail.clone());
+                            cur_detail = "".to_string();
+                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
+                            ret.push(sn.clone());
+                            last_state = State::Name;
+                        }
+                        State::DescCont => {
+                            cur_detail += x;
+                            last_state = State::DescCont;
+                        }
+                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                    }
+                }
+                State::DescCont => {
+                    match now_data {
+                        State::Name => {
+                            sn.detail = Some(cur_detail.clone());
+                            cur_detail = "".to_string();
+                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
+                            ret.push(sn.clone());
+                            last_state = State::Name;
+                        }
+                        State::DescCont => {
+                            cur_detail += x;
+                            last_state = State::DescCont;
+                        }
+                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                    }
+                }
+            };
+        }
+        Ok(ret)
     }
 
     pub fn take_snapshot(&self, name: &str, description: Option<&str>, is_live: bool) -> VMResult<()> {
@@ -204,19 +290,19 @@ impl VBoxManage {
         cmd.args(&["snapshot", &self.vm, "take", name]);
         if let Some(x) = description { cmd.args(&["--description", x]); }
         if is_live { cmd.arg("--live"); }
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 
     pub fn delete_snapshot(&self, name: &str) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "delete", name]))
+        self.vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "delete", name]))
     }
 
     pub fn restore_snapshot(&self, name: &str) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "restore", name]))
+        self.vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "restore", name]))
     }
 
     pub fn restore_current_snapshot(&self) -> VMResult<()> {
-        Self::vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "restorecurrent"]))
+        self.vbox_exec2(self.cmd().args(&["snapshot", &self.vm, "restorecurrent"]))
     }
 
     pub fn run(&self, guest_args: &[&str]) -> VMResult<()> {
@@ -224,7 +310,7 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.vm, "run"]);
         cmd.args(self.build_auth());
         cmd.args(guest_args);
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 
     pub fn copy_from(&self, from_guest_path: &str, to_host_path: &str) -> VMResult<()> {
@@ -232,7 +318,7 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.vm, "copyfrom"]);
         cmd.args(self.build_auth());
         cmd.args(&[from_guest_path, to_host_path]);
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 
     pub fn copy_to(&self, from_host_path: &str, to_guest_path: &str) -> VMResult<()> {
@@ -240,7 +326,7 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.vm, "copyto"]);
         cmd.args(self.build_auth());
         cmd.args(&[from_host_path, to_guest_path]);
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 
     pub fn keyboard_put_scancode<T: Iterator<Item=u8>>(&self, v: T) -> VMResult<()> {
@@ -254,7 +340,7 @@ impl VBoxManage {
             ret.write_fmt(format_args!("{:x}", x)).unwrap();
             ret
         }).collect::<Vec<String>>());
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 
     pub fn keyboard_put_string(&self, v: &[&str]) -> VMResult<()> {
@@ -262,32 +348,72 @@ impl VBoxManage {
         cmd.args(&["controlvm", &self.vm, "keyboardputstring"]);
         cmd.args(self.build_auth());
         cmd.args(v);
-        Self::vbox_exec2(&mut cmd)
+        self.vbox_exec2(&mut cmd)
     }
 }
 
 impl PowerCmd for VBoxManage {
-    fn start(&self) -> VMResult<()> { self.poweron() }
+    fn start(&self) -> VMResult<()> { self.start_vm() }
 
-    fn stop(&self) -> VMResult<()> { self.acpi_power_button() }
-
-    fn hard_stop(&self) -> VMResult<()> { self.poweroff() }
-
-    fn suspend(&self) -> VMResult<()> { self.save_state() }
-
-    fn resume(&self) -> VMResult<()> { Self::resume(self) }
-
-    fn is_running(&self) -> VMResult<bool> { Ok(self.start_vm() != Ok(())) }
-
-    fn reboot(&self) -> VMResult<()> { self.reset() }
-
-    fn hard_reboot(&self) -> VMResult<()> {
-        Err(VMError::from(ErrorKind::UnsupportedCommand))
+    /// Sends ACPI shutdown signals until the VM to stop.
+    fn stop(&self) -> VMResult<()> {
+        loop {
+            // Polling every second.
+            let status = self.acpi_power_button_vm();
+            if status == Err(VMError::from(ErrorKind::VMIsNotRunning)) {
+                return Ok(());
+            } else if let Err(x) = status {
+                return Err(x);
+            }
+            std::thread::sleep(Duration::from_secs(1))
+        }
     }
 
-    fn pause(&self) -> VMResult<()> { VBoxManage::pause(self) }
+    fn hard_stop(&self) -> VMResult<()> {
+        self.poweroff_vm()
+    }
 
-    fn unpause(&self) -> VMResult<()> { self.resume() }
+    fn suspend(&self) -> VMResult<()> {
+        loop {
+            let status = self.save_state_vm();
+            if status == Err(VMError::from(ErrorKind::VMIsNotRunning)) {
+                return Ok(());
+            } else if status == Err(VMError::from(Repr::Unknown("Machine in invalid state 2 -- saved".to_string()))) {
+                // Do nothing
+            } else if let Err(x) = status {
+                return Err(x);
+            }
+            std::thread::sleep(Duration::from_secs(1))
+        }
+    }
+
+    fn resume(&self) -> VMResult<()> { self.start_vm() }
+
+    fn is_running(&self) -> VMResult<bool> {
+        let s = self.show_vm_info()?;
+        for x in s.lines() {
+            if x.starts_with("VMState=\"") {
+                return Ok(&x[9..x.len() - 1] == "running");
+            }
+        }
+        Err(VMError::from(UnexpectedResponse(s)))
+    }
+
+    fn reboot(&self) -> VMResult<()> {
+        self.stop()?;
+        loop {
+            let status = self.start();
+            if status == Ok(()) { return Ok(()); } else if status == Err(VMError::from(ErrorKind::VMIsRunning)) {
+                // Do nothing
+            } else if let Err(x) = status { return Err(x); }
+        }
+    }
+
+    fn hard_reboot(&self) -> VMResult<()> { self.reset_vm() }
+
+    fn pause(&self) -> VMResult<()> { VBoxManage::pause_vm(self) }
+
+    fn unpause(&self) -> VMResult<()> { self.resume_vm() }
 }
 
 impl GuestCmd for VBoxManage {
@@ -295,29 +421,29 @@ impl GuestCmd for VBoxManage {
         self.run(guest_args)
     }
 
-    fn copy_from_guest_to_host(&mut self, from_guest_path: &str, to_host_path: &str) -> VMResult<()> {
+    fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str) -> VMResult<()> {
         self.copy_from(from_guest_path, to_host_path)
     }
 
-    fn copy_from_host_to_guest(&mut self, from_host_path: &str, to_guest_path: &str) -> VMResult<()> {
+    fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str) -> VMResult<()> {
         self.copy_to(from_host_path, to_guest_path)
     }
 }
 
 impl SnapshotCmd for VBoxManage {
-    fn list_snapshots(&mut self) -> VMResult<Vec<Snapshot>> {
+    fn list_snapshots(&self) -> VMResult<Vec<Snapshot>> {
         Self::list_snapshots(self)
     }
 
-    fn take_snapshot(&mut self, name: &str) -> VMResult<()> {
+    fn take_snapshot(&self, name: &str) -> VMResult<()> {
         Self::take_snapshot(self, name, None, true)
     }
 
-    fn revert_snapshot(&mut self, name: &str) -> VMResult<()> {
+    fn revert_snapshot(&self, name: &str) -> VMResult<()> {
         self.restore_snapshot(name)
     }
 
-    fn delete_snapshot(&mut self, name: &str) -> VMResult<()> {
+    fn delete_snapshot(&self, name: &str) -> VMResult<()> {
         Self::delete_snapshot(self, name)
     }
 }
