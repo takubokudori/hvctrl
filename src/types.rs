@@ -9,8 +9,6 @@ pub(crate) fn decode(encoding: &'static Encoding, b: &[u8]) -> String {
         return s;
     }
     unsafe {
-        // decoding returned Cow::Borrowed, meaning these bytes
-        // are already valid utf8
         String::from_utf8_unchecked(b.to_vec())
     }
 }
@@ -28,6 +26,11 @@ pub(crate) fn exec_cmd(encoding: &'static Encoding, cmd: &mut Command) -> VMResu
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct VMError {
     repr: Repr,
+}
+
+#[macro_export]
+macro_rules! vmerr {
+    ($x:expr) => { Err(VMError::from($x)) }
 }
 
 impl std::error::Error for VMError {}

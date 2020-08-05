@@ -4,7 +4,6 @@ use encoding_rs::Encoding;
 use std::process::Command;
 use std::time::Duration;
 
-
 pub struct VBoxManage {
     path: String,
     vm: String,
@@ -75,28 +74,28 @@ impl VBoxManage {
     #[inline]
     fn handle_error(s: &str) -> VMResult<String> {
         if s.starts_with("Could not find a registered machine named ") {
-            return Err(VMError::from(ErrorKind::VMNotFound));
+            return vmerr!(ErrorKind::VMNotFound);
         }
         if s.starts_with("Could not find a snapshot named ") {
-            return Err(VMError::from(ErrorKind::SnapshotNotFound));
+            return vmerr!(ErrorKind::SnapshotNotFound);
         }
         if s.starts_with("The specified user was not able to logon on guest") {
-            return Err(VMError::from(ErrorKind::AuthenticationFailed));
+            return vmerr!(ErrorKind::AuthenticationFailed);
         }
         if s.starts_with("FsObjQueryInfo failed on") || s.starts_with("File ") {
             let s = s.lines().last().unwrap();
-            return Err(VMError::from(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string())));
+            return vmerr!(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string()));
         }
         if s.starts_with("Invalid machine state: PoweredOff") || s.starts_with("Machine in invalid state 1 -- powered off") {
-            return Err(VMError::from(ErrorKind::VMIsNotRunning));
+            return vmerr!(ErrorKind::VMIsNotRunning);
         }
         if s.ends_with(" is not currently running") || s.find("is not running").is_some() {
-            return Err(VMError::from(ErrorKind::VMIsNotRunning));
+            return vmerr!(ErrorKind::VMIsNotRunning);
         }
         if s.lines().next().unwrap().ends_with("is already locked by a session (or being locked or unlocked)") {
-            return Err(VMError::from(ErrorKind::VMIsRunning));
+            return vmerr!(ErrorKind::VMIsRunning);
         }
-        Err(VMError::from(Repr::Unknown(format!("Unknown error: {}", s))))
+        vmerr!(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
     #[inline]
@@ -216,7 +215,7 @@ impl VBoxManage {
                 if last_state == State::Desc || last_state == State::DescCont {
                     cur_detail.pop(); // Remove last "
                     return Ok(ret);
-                } else { return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))); }
+                } else { return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())); }
             } else {
                 State::DescCont
             };
@@ -224,44 +223,48 @@ impl VBoxManage {
                 State::Init => {
                     match now_data {
                         State::Name => {
-                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
+                            let p = x.find("=").expect("Invalid name");
+                            sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }
-                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                        _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                     }
                 }
                 State::Name => {
                     match now_data {
                         State::UUID => {
-                            sn.id = Some(x[SN_UUID.len()..x.len() - 1].to_string());
+                            let p = x.find("=").expect("Invalid UUID");
+                            sn.id = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::UUID;
                         }
-                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                        _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                     }
                 }
                 State::UUID => {
                     match now_data {
                         State::Desc => {
-                            sn.detail = Some(x[SN_DESC.len()..x.len() - 1].to_string());
+                            let p = x.find("=").expect("Invalid description");
+                            cur_detail = x[p + 2..x.len() - 1].to_string();
                             last_state = State::Desc;
                         }
-                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                        _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                     }
                 }
                 State::Desc => {
                     match now_data {
                         State::Name => {
                             sn.detail = Some(cur_detail.clone());
-                            cur_detail = "".to_string();
-                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
                             ret.push(sn.clone());
+                            cur_detail = "".to_string();
+                            let p = x.find("=").expect("Invalid name");
+                            sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }
                         State::DescCont => {
                             cur_detail += x;
                             last_state = State::DescCont;
                         }
-                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                        _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                     }
                 }
                 State::DescCont => {
@@ -274,10 +277,14 @@ impl VBoxManage {
                             last_state = State::Name;
                         }
                         State::DescCont => {
+                            #[cfg(target_os = "windows")]
+                                { cur_detail += "\r\n"; }
+                            #[cfg(not(target_os = "windows"))]
+                                { cur_detail += "\n"; }
                             cur_detail += x;
                             last_state = State::DescCont;
                         }
-                        _ => return Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+                        _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                     }
                 }
             };
@@ -360,7 +367,7 @@ impl PowerCmd for VBoxManage {
         loop {
             // Polling every second.
             let status = self.acpi_power_button_vm();
-            if status == Err(VMError::from(ErrorKind::VMIsNotRunning)) {
+            if status == vmerr!(ErrorKind::VMIsNotRunning) {
                 return Ok(());
             } else if let Err(x) = status {
                 return Err(x);
@@ -376,9 +383,9 @@ impl PowerCmd for VBoxManage {
     fn suspend(&self) -> VMResult<()> {
         loop {
             let status = self.save_state_vm();
-            if status == Err(VMError::from(ErrorKind::VMIsNotRunning)) {
+            if status == vmerr!(ErrorKind::VMIsNotRunning) {
                 return Ok(());
-            } else if status == Err(VMError::from(Repr::Unknown("Machine in invalid state 2 -- saved".to_string()))) {
+            } else if status == vmerr!(Repr::Unknown("Machine in invalid state 2 -- saved".to_string())) {
                 // Do nothing
             } else if let Err(x) = status {
                 return Err(x);
@@ -396,14 +403,14 @@ impl PowerCmd for VBoxManage {
                 return Ok(&x[9..x.len() - 1] == "running");
             }
         }
-        Err(VMError::from(UnexpectedResponse(s)))
+        vmerr!(UnexpectedResponse(s))
     }
 
     fn reboot(&self) -> VMResult<()> {
         self.stop()?;
         loop {
             let status = self.start();
-            if status == Ok(()) { return Ok(()); } else if status == Err(VMError::from(ErrorKind::VMIsRunning)) {
+            if status == Ok(()) { return Ok(()); } else if status == vmerr!(ErrorKind::VMIsRunning) {
                 // Do nothing
             } else if let Err(x) = status { return Err(x); }
         }

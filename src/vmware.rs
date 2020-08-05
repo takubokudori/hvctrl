@@ -95,7 +95,7 @@ impl VMPlayerRest {
             Ok(x) => {
                 let stdout = match String::from_utf8(x.stdout) {
                     Ok(s) => s,
-                    Err(x) => return Err(VMError::from(Repr::Unknown(format!("Failed to convert stdout: {}", x.to_string())))),
+                    Err(x) => return vmerr!(Repr::Unknown(format!("Failed to convert stdout: {}", x.to_string()))),
                 };
                 for d in stdout.lines() {
                     if d.starts_with("Serving HTTP on ") {
@@ -103,9 +103,9 @@ impl VMPlayerRest {
                         return Ok(());
                     }
                 }
-                Err(VMError::from(Repr::Unknown("Failed to start a server".to_string())))
+                vmerr!(Repr::Unknown("Failed to start a server".to_string()))
             }
-            Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string()))),
+            Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
         }
     }
 
@@ -119,10 +119,10 @@ impl VMPlayerRest {
                 stdin.write_fmt(format_args!("{}\n{}\n{}\n", username, password, password)).unwrap();
                 match x.wait_with_output() {
                     Ok(_) => Ok(()),
-                    Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string()))),
+                    Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
                 }
             }
-            Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string()))),
+            Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
         }
     }
 
@@ -133,7 +133,7 @@ impl VMPlayerRest {
         } else { v };
         match v.send() {
             Ok(x) => Self::handle_response(x, &self.encoding),
-            Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string()))),
+            Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
         }
     }
 
@@ -148,7 +148,7 @@ impl VMPlayerRest {
         let is_success = resp.status() == StatusCode::OK;
         let text = match resp.text_with_charset(encoding) {
             Ok(x) => x,
-            Err(x) => return Err(VMError::from(Repr::Unknown(format!("Failed to convert error: {}", x.to_string())))),
+            Err(x) => return vmerr!(Repr::Unknown(format!("Failed to convert error: {}", x.to_string()))),
         };
         if is_success {
             Ok(text)
@@ -160,7 +160,7 @@ impl VMPlayerRest {
     pub fn handle_error(s: String) -> VMResult<String> {
         let ts = s.trim();
         if ts == "404 page not found" {
-            return Err(VMError::from(ErrorKind::UnsupportedCommand));
+            return vmerr!(ErrorKind::UnsupportedCommand);
         }
         match serde_json::from_str::<VMRestFailedResponse>(&ts) {
             Ok(x) => Err(Self::handle_json_error(&x.message)),
@@ -179,14 +179,14 @@ impl VMPlayerRest {
     fn serialize<T: Serialize>(o: &T) -> VMResult<String> {
         match serde_json::to_string(o) {
             Ok(x) => Ok(x),
-            Err(x) => Err(VMError::from(ErrorKind::InvalidParameter(x.to_string()))),
+            Err(x) => vmerr!(ErrorKind::InvalidParameter(x.to_string())),
         }
     }
 
     fn deserialize<'a, T: Deserialize<'a>>(s: &'a str) -> VMResult<T> {
         match serde_json::from_str(s) {
             Ok(x) => Ok(x),
-            Err(x) => Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+            Err(x) => vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
         }
     }
 
@@ -197,7 +197,7 @@ impl VMPlayerRest {
                 if p == path { return Ok(vm.id.unwrap()); }
             }
         }
-        Err(VMError::from(ErrorKind::VMNotFound))
+        vmerr!(ErrorKind::VMNotFound)
     }
 
     // (vm name, id)
@@ -219,7 +219,7 @@ impl VMPlayerRest {
             "poweredOn" => Ok(VMPowerState::Running),
             "poweredOff" => Ok(VMPowerState::Stopped),
             "suspended" => Ok(VMPowerState::Suspended),
-            x => Err(VMError::from(ErrorKind::UnexpectedResponse(x.to_string()))),
+            x => vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
         }
     }
 
@@ -368,7 +368,7 @@ impl PowerCmd for VMPlayerRest {
         self.start()
     }
 
-    fn pause(&self) -> VMResult<()> { Err(VMError::from(ErrorKind::UnsupportedCommand)) }
+    fn pause(&self) -> VMResult<()> { vmerr!(ErrorKind::UnsupportedCommand) }
 
-    fn unpause(&self) -> VMResult<()> { Err(VMError::from(ErrorKind::UnsupportedCommand)) }
+    fn unpause(&self) -> VMResult<()> { vmerr!(ErrorKind::UnsupportedCommand) }
 }
