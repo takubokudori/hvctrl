@@ -4,6 +4,7 @@ use encoding_rs::Encoding;
 use std::process::Command;
 use std::time::Duration;
 
+#[derive(Clone, Debug)]
 pub struct VBoxManage {
     path: String,
     vm: String,
@@ -80,7 +81,7 @@ impl VBoxManage {
             return vmerr!(ErrorKind::SnapshotNotFound);
         }
         if s.starts_with("The specified user was not able to logon on guest") {
-            return vmerr!(ErrorKind::AuthenticationFailed);
+            return vmerr!(ErrorKind::GuestAuthenticationFailed);
         }
         if s.starts_with("FsObjQueryInfo failed on") || s.starts_with("File ") {
             let s = s.lines().last().unwrap();
@@ -117,7 +118,6 @@ impl VBoxManage {
         }
     }
 
-    /// Returns VMResult<()>.
     #[inline]
     fn vbox_exec2(&self, cmd: &mut Command) -> VMResult<()> {
         self.vbox_exec(cmd)?;
@@ -180,7 +180,6 @@ impl VBoxManage {
         self.vbox_exec2(self.cmd().args(&["controlvm", &self.vm, "savestate"]))
     }
 
-    /// Returns (name, UUID).
     pub fn list_snapshots(&self) -> VMResult<Vec<Snapshot>> {
         const SN_NAME: &str = "SnapshotName";
         const SN_UUID: &str = "SnapshotUUID";
@@ -212,10 +211,10 @@ impl VBoxManage {
                 State::Desc
             } else if x.starts_with("CurrentSnapshotName=\"") {
                 // End
-                if last_state == State::Desc || last_state == State::DescCont {
+                return if last_state == State::Desc || last_state == State::DescCont {
                     cur_detail.pop(); // Remove last "
-                    return Ok(ret);
-                } else { return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())); }
+                    Ok(ret)
+                } else { vmerr!(ErrorKind::UnexpectedResponse(x.to_string())) };
             } else {
                 State::DescCont
             };
@@ -244,7 +243,7 @@ impl VBoxManage {
                     match now_data {
                         State::Desc => {
                             let p = x.find("=").expect("Invalid description");
-                            cur_detail = x[p + 2..x.len() - 1].to_string();
+                            cur_detail = x[p + 2..].to_string();
                             last_state = State::Desc;
                         }
                         _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
@@ -253,7 +252,7 @@ impl VBoxManage {
                 State::Desc => {
                     match now_data {
                         State::Name => {
-                            sn.detail = Some(cur_detail.clone());
+                            sn.detail = Some(cur_detail[..cur_detail.len() - 1].to_string());
                             ret.push(sn.clone());
                             cur_detail = "".to_string();
                             let p = x.find("=").expect("Invalid name");
@@ -261,6 +260,10 @@ impl VBoxManage {
                             last_state = State::Name;
                         }
                         State::DescCont => {
+                            #[cfg(target_os = "windows")]
+                                { cur_detail += "\r\n"; }
+                            #[cfg(not(target_os = "windows"))]
+                                { cur_detail += "\n"; }
                             cur_detail += x;
                             last_state = State::DescCont;
                         }
@@ -270,10 +273,11 @@ impl VBoxManage {
                 State::DescCont => {
                     match now_data {
                         State::Name => {
-                            sn.detail = Some(cur_detail.clone());
-                            cur_detail = "".to_string();
-                            sn.name = Some(x[SN_NAME.len()..x.len() - 1].to_string());
+                            sn.detail = Some(cur_detail[..cur_detail.len() - 1].to_string());
                             ret.push(sn.clone());
+                            cur_detail = "".to_string();
+                            let p = x.find("=").expect("Invalid name");
+                            sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }
                         State::DescCont => {
@@ -397,10 +401,11 @@ impl PowerCmd for VBoxManage {
     fn resume(&self) -> VMResult<()> { self.start_vm() }
 
     fn is_running(&self) -> VMResult<bool> {
+        const VMS: &str = "VMState=\"";
         let s = self.show_vm_info()?;
         for x in s.lines() {
-            if x.starts_with("VMState=\"") {
-                return Ok(&x[9..x.len() - 1] == "running");
+            if x.starts_with(VMS) {
+                return Ok(&x[VMS.len()..x.len() - 1] == "running");
             }
         }
         vmerr!(UnexpectedResponse(s))

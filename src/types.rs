@@ -6,10 +6,12 @@ use std::process::Command;
 pub(crate) fn decode(encoding: &'static Encoding, b: &[u8]) -> String {
     let (text, _, _) = encoding.decode(b);
     if let Cow::Owned(s) = text {
-        return s;
-    }
-    unsafe {
-        String::from_utf8_unchecked(b.to_vec())
+        s
+    } else {
+        unsafe {
+            // valid utf8
+            String::from_utf8_unchecked(b.to_vec())
+        }
     }
 }
 
@@ -50,6 +52,7 @@ pub enum Repr {
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ErrorKind {
     AuthenticationFailed,
+    GuestAuthenticationFailed,
     ExecutionFailed(String),
     FileError(String),
     InvalidParameter(String),
@@ -59,6 +62,8 @@ pub enum ErrorKind {
     VMIsNotRunning,
     VMIsRunning,
     VMNotFound,
+    NetworkNotFound,
+    NetworkAdaptorNotFound,
 }
 
 impl From<Repr> for VMError {
@@ -77,7 +82,6 @@ pub type VMResult<T> = Result<T, VMError>;
 
 pub trait PowerCmd {
     /// Starts a VM and waits for the VM to start.
-    /// This sould implemented
     fn start(&self) -> VMResult<()>;
     /// Stops a VM softly and waits for the VM to stop.
     fn stop(&self) -> VMResult<()>;
@@ -121,6 +125,9 @@ pub trait GuestCmd {
 pub trait NICCmd {
     /// Returns NICs of a VM.
     fn list_nics(&self) -> VMResult<Vec<NIC>>;
+    fn add_nic(&self, nic: &NIC) -> VMResult<()>;
+    fn update_nic(&self, nic: &NIC) -> VMResult<()>;
+    fn remove_nic(&self, nic: &NIC) -> VMResult<()>;
 }
 
 pub trait SharedFolderCmd {
@@ -176,12 +183,12 @@ impl PartialEq for Snapshot {
 }
 
 /// Represents NIC type.
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum NICType {
     Bridge,
     NAT,
     HostOnly,
-    Custom,
+    Custom(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]

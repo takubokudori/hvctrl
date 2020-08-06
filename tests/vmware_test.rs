@@ -11,8 +11,9 @@
 //! ```
 #[cfg(test)]
 mod tests {
-    use hvctrl::vmware::VMPlayerRest;
+    use hvctrl::vmware::VMRest;
     use serde::{Serialize, Deserialize};
+    use hvctrl::types::{NICType, PowerCmd};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VMRestConfig {
@@ -25,12 +26,12 @@ mod tests {
     }
 
 
-    fn get_cmd() -> VMPlayerRest {
+    fn get_cmd() -> VMRest {
         let x = std::fs::read_to_string("tests/config.toml").expect("Failed to read config.toml");
         let config: Result<VMRestConfig, toml::de::Error> = toml::from_str(&x);
         match config {
             Ok(config) => {
-                let mut cmd = VMPlayerRest::new();
+                let mut cmd = VMRest::new();
                 if let Some(x) = config.vmrest_path { cmd = cmd.vmrest_path(x); }
                 if let Some(x) = config.vmrest_url { cmd = cmd.url(x); }
                 if let Some(x) = config.vmrest_username { cmd = cmd.username(x); }
@@ -44,6 +45,21 @@ mod tests {
             }
             Err(e) => panic!("Filed to parse config.toml: {}", e),
         }
+    }
+
+    #[test]
+    fn delete_vms_test() {
+        println!("{:?}", get_cmd().delete_vms());
+    }
+
+    #[test]
+    fn get_ip_address_test() {
+        println!("{:?}", get_cmd().get_ip_address());
+    }
+
+    #[test]
+    fn stop_test() {
+        println!("{:?}", get_cmd().stop());
     }
 
     #[test]
@@ -69,5 +85,11 @@ mod tests {
     #[test]
     fn mount_shared_folder_test() {
         println!("{:?}", get_cmd().mount_shared_folder("foo", "bar", false));
+    }
+
+    #[test]
+    fn update_nic_test() {
+        println!("{:?}", get_cmd().update_nic(999, &NICType::Bridge));
+        println!("{:?}", get_cmd().update_nic(1, &NICType::HostOnly));
     }
 }
