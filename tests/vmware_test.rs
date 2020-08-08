@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn delete_vms_test() {
-        println!("{:?}", get_cmd().delete_vms());
+        println!("{:?}", get_cmd().delete_vm());
     }
 
     #[test]

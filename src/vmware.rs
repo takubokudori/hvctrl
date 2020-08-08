@@ -196,12 +196,8 @@ impl VMRest {
     fn handle_json_error(s: &str) -> VMError {
         const RP: &str = "Redundant parameter: ";
         const OOP: &str = "One of the parameters was invalid: ";
-        if s.starts_with(RP) {
-            return VMError::from(ErrorKind::InvalidParameter(s[RP.len()..].to_string()));
-        }
-        if s.starts_with(OOP) {
-            return VMError::from(ErrorKind::InvalidParameter(s[OOP.len()..].to_string()));
-        }
+        starts_err!(s,RP,ErrorKind::InvalidParameter(s[RP.len()..].to_string()));
+        starts_err!(s,OOP,ErrorKind::InvalidParameter(s[OOP.len()..].to_string()));
 
         match s {
             "Authentication failed" => VMError::from(ErrorKind::AuthenticationFailed),
@@ -243,7 +239,7 @@ impl VMRest {
         Ok(Self::deserialize(&s)?)
     }
 
-    pub fn delete_vms(&self) -> VMResult<()> {
+    pub fn delete_vm(&self) -> VMResult<()> {
         let cli = self.get_client()?;
         let v = cli.delete(&format!("{}/api/vms/{}", self.url, self.vm_id));
         let s = self.execute(v)?;
@@ -378,7 +374,7 @@ impl VMRest {
 
     pub fn delete_nic(&self, index: i32) -> VMResult<()> {
         let cli = self.get_client()?;
-        let v = cli.get(&format!("{}/api/vms/{}/nic/{}", self.url, self.vm_id, index));
+        let v = cli.delete(&format!("{}/api/vms/{}/nic/{}", self.url, self.vm_id, index));
         self.execute(v)?;
         Ok(())
     }
@@ -437,6 +433,13 @@ impl VMRest {
             is_readonly,
         }])
     }
+
+    pub fn delete_shared_folder(&self, folder_id: &str) -> VMResult<()> {
+        let cli = self.get_client()?;
+        let v = cli.delete(&format!("{}/api/vms/{}/sharedfolders/{}", self.url, self.vm_id, folder_id));
+        self.execute(v)?;
+        Ok(())
+    }
 }
 
 impl PowerCmd for VMRest {
@@ -476,7 +479,7 @@ impl NICCmd for VMRest {
         if let Some(ty) = &nic.ty {
             VMRest::create_nic(self, ty)?;
         } else {
-            return vmerr!(ErrorKind::InvalidParameter("ty".to_string()));
+            return vmerr!(ErrorKind::InvalidParameter("ty is required".to_string()));
         }
         Ok(())
     }
@@ -485,7 +488,7 @@ impl NICCmd for VMRest {
         if let (Some(index), Some(ty)) = (&nic.id, &nic.ty) {
             VMRest::update_nic(self, index.parse().unwrap_or(0), ty)
         } else {
-            vmerr!(ErrorKind::InvalidParameter("id, ty".to_string()))
+            vmerr!(ErrorKind::InvalidParameter("id and ty are required".to_string()))
         }
     }
 
@@ -493,7 +496,29 @@ impl NICCmd for VMRest {
         if let Some(index) = &nic.id {
             self.delete_nic(index.parse().unwrap_or(0))
         } else {
-            vmerr!(ErrorKind::InvalidParameter("id, ty".to_string()))
+            vmerr!(ErrorKind::InvalidParameter("id is required".to_string()))
+        }
+    }
+}
+
+impl SharedFolderCmd for VMRest {
+    fn list_shared_folders(&self) -> VMResult<Vec<SharedFolder>> {
+        VMRest::list_shared_folders(self)
+    }
+
+    fn mount_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()> {
+        VMRest::mount_shared_folders(self, &[shfs])
+    }
+
+    fn unmount_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()> {
+        SharedFolderCmd::delete_shared_folder(self, shfs)
+    }
+
+    fn delete_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()> {
+        if let Some(id) = &shfs.id {
+            Self::delete_shared_folder(self, id)
+        } else {
+            vmerr!(ErrorKind::InvalidParameter("id is required".to_string()))
         }
     }
 }

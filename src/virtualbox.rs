@@ -73,37 +73,31 @@ impl VBoxManage {
     }
 
     #[inline]
-    fn handle_error(s: &str) -> VMResult<String> {
-        if s.starts_with("Could not find a registered machine named ") {
-            return vmerr!(ErrorKind::VMNotFound);
-        }
-        if s.starts_with("Could not find a snapshot named ") {
-            return vmerr!(ErrorKind::SnapshotNotFound);
-        }
-        if s.starts_with("The specified user was not able to logon on guest") {
-            return vmerr!(ErrorKind::GuestAuthenticationFailed);
-        }
+    fn handle_error(s: &str) -> VMError {
+        starts_err!(s, "Could not find a registered machine named", ErrorKind::VMNotFound);
+        starts_err!(s, "Could not find a snapshot named ", ErrorKind::SnapshotNotFound);
+        starts_err!(s, "The specified user was not able to logon on guest", ErrorKind::GuestAuthenticationFailed);
         if s.starts_with("FsObjQueryInfo failed on") || s.starts_with("File ") {
             let s = s.lines().last().unwrap();
-            return vmerr!(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string()));
+            return VMError::from(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string()));
         }
         if s.starts_with("Invalid machine state: PoweredOff") || s.starts_with("Machine in invalid state 1 -- powered off") {
-            return vmerr!(ErrorKind::VMIsNotRunning);
+            return VMError::from(ErrorKind::VMIsNotRunning);
         }
         if s.ends_with(" is not currently running") || s.find("is not running").is_some() {
-            return vmerr!(ErrorKind::VMIsNotRunning);
+            return VMError::from(ErrorKind::VMIsNotRunning);
         }
         if s.lines().next().unwrap().ends_with("is already locked by a session (or being locked or unlocked)") {
-            return vmerr!(ErrorKind::VMIsRunning);
+            return VMError::from(ErrorKind::VMIsRunning);
         }
-        vmerr!(Repr::Unknown(format!("Unknown error: {}", s)))
+        VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
     #[inline]
     fn check(s: String) -> VMResult<String> {
         const ERROR_STR: &str = "VBoxManage.exe: error: ";
         if s.starts_with(ERROR_STR) {
-            Self::handle_error(&s[ERROR_STR.len()..].trim())
+            Err(Self::handle_error(&s[ERROR_STR.len()..].trim()))
         } else {
             Ok(s)
         }

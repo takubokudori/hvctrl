@@ -35,6 +35,11 @@ macro_rules! vmerr {
     ($x:expr) => { Err(VMError::from($x)) }
 }
 
+macro_rules! starts_err {
+    ($s:expr, $x:expr, $y:expr) => {
+        if $s.starts_with($x) { return VMError::from($y); }
+     }
+}
 impl std::error::Error for VMError {}
 
 impl std::fmt::Display for VMError {
@@ -134,11 +139,11 @@ pub trait SharedFolderCmd {
     /// Returns shared folders of a VM.
     fn list_shared_folders(&self) -> VMResult<Vec<SharedFolder>>;
     /// Mounts a shared folder to a VM.
-    fn mount_shared_folder(&self, name: &str) -> VMResult<()>;
+    fn mount_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()>;
     /// Unmounts a shared folder to a VM.
-    fn unmount_shared_folder(&self, name: &str) -> VMResult<()>;
+    fn unmount_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()>;
     /// Deletes a snapshot of a VM.
-    fn delete_shared_folder(&self, name: &str) -> VMResult<()>;
+    fn delete_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
