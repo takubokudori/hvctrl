@@ -30,16 +30,6 @@ pub struct VMError {
     repr: Repr,
 }
 
-#[macro_export]
-macro_rules! vmerr {
-    ($x:expr) => { Err(VMError::from($x)) }
-}
-
-macro_rules! starts_err {
-    ($s:expr, $x:expr, $y:expr) => {
-        if $s.starts_with($x) { return VMError::from($y); }
-     }
-}
 impl std::error::Error for VMError {}
 
 impl std::fmt::Display for VMError {
@@ -84,6 +74,17 @@ impl From<ErrorKind> for VMError {
 }
 
 pub type VMResult<T> = Result<T, VMError>;
+
+#[macro_export]
+macro_rules! vmerr {
+    ($x:expr) => { Err(crate::types::VMError::from($x)) }
+}
+
+macro_rules! starts_err {
+    ($s:expr, $x:expr, $y:expr) => {
+        if $s.starts_with($x) { return crate::types::VMError::from($y); }
+     }
+}
 
 pub trait PowerCmd {
     /// Starts a VM and waits for the VM to start.

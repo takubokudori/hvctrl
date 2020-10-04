@@ -11,9 +11,9 @@
 //! ```
 #[cfg(test)]
 mod tests {
+    use hvctrl::types::{NICType, PowerCmd};
     use hvctrl::vmware::VMRest;
     use serde::{Serialize, Deserialize};
-    use hvctrl::types::{NICType, PowerCmd};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VMRestConfig {

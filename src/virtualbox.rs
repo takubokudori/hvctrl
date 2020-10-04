@@ -1,5 +1,4 @@
 use crate::types::*;
-use crate::types::ErrorKind::UnexpectedResponse;
 use encoding_rs::Encoding;
 use std::process::Command;
 use std::time::Duration;
@@ -402,7 +401,7 @@ impl PowerCmd for VBoxManage {
                 return Ok(&x[VMS.len()..x.len() - 1] == "running");
             }
         }
-        vmerr!(UnexpectedResponse(s))
+        vmerr!(ErrorKind::UnexpectedResponse(s))
     }
 
     fn reboot(&self) -> VMResult<()> {

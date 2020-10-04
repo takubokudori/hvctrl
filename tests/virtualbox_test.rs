@@ -13,10 +13,10 @@ mod cmd_test;
 
 #[cfg(test)]
 mod tests {
+    use crate::cmd_test;
     use hvctrl::types::*;
     use hvctrl::virtualbox::VBoxManage;
     use serde::{Serialize, Deserialize};
-    use crate::cmd_test;
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VBoxManageConfig {
