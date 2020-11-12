@@ -1,25 +1,12 @@
-use encoding_rs::Encoding;
 use serde::{Serialize, Deserialize};
-use std::borrow::Cow;
 use std::process::Command;
+use winwrap::string::AString;
 
-pub(crate) fn decode(encoding: &'static Encoding, b: &[u8]) -> String {
-    let (text, _, _) = encoding.decode(b);
-    if let Cow::Owned(s) = text {
-        s
-    } else {
-        unsafe {
-            // valid utf8
-            String::from_utf8_unchecked(b.to_vec())
-        }
-    }
-}
-
-/// Returns (stdout, stderr).
-pub(crate) fn exec_cmd(encoding: &'static Encoding, cmd: &mut Command) -> VMResult<(String, String)> {
+/// Executes `cmd` and Returns (stdout, stderr).
+pub(crate) fn exec_cmd(cmd: &mut Command) -> VMResult<(String, String)> {
     match cmd.output() {
         Ok(o) => {
-            Ok((decode(encoding, &o.stdout), decode(encoding, &o.stderr)))
+            Ok((AString::new(o.stdout).to_string_lossy(), AString::new(o.stderr).to_string_lossy()))
         }
         Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string())))
     }

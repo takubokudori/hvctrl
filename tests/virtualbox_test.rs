@@ -41,7 +41,6 @@ mod tests {
                 if let Some(x) = config.vboxmanage_vm { cmd = cmd.vm(x); }
                 if let Some(x) = config.vboxmanage_guest_username { cmd = cmd.guest_username(x); }
                 if let Some(x) = config.vboxmanage_guest_password { cmd = cmd.guest_password(x); }
-                if let Some(x) = config.vboxmanage_encoding { cmd = cmd.encoding(&x); }
                 cmd
             }
             Err(e) => panic!("Filed to parse config.toml: {}", e),

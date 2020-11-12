@@ -1,5 +1,4 @@
 use crate::types::*;
-use encoding_rs::Encoding;
 use std::process::Command;
 use std::time::Duration;
 
@@ -11,7 +10,6 @@ pub struct VBoxManage {
     guest_password: Option<String>,
     guest_password_file: Option<String>,
     guest_domain: Option<String>,
-    encoding: &'static Encoding,
 }
 
 impl VBoxManage {
@@ -23,7 +21,6 @@ impl VBoxManage {
             guest_password: None,
             guest_password_file: None,
             guest_domain: None,
-            encoding: encoding_rs::UTF_8,
         }
     }
 
@@ -54,11 +51,6 @@ impl VBoxManage {
 
     pub fn guest_domain<T: Into<String>>(mut self, guest_domain: T) -> Self {
         self.guest_domain = Some(guest_domain.into());
-        self
-    }
-
-    pub fn encoding(mut self, encoding_name: &str) -> Self {
-        self.encoding = Encoding::for_label(encoding_name.as_bytes()).expect("Invalid encoding");
         self
     }
 
@@ -103,7 +95,7 @@ impl VBoxManage {
     }
 
     fn vbox_exec(&self, cmd: &mut Command) -> VMResult<String> {
-        let (stdout, stderr) = exec_cmd(self.encoding, cmd)?;
+        let (stdout, stderr) = exec_cmd(cmd)?;
         if stderr.len() != 0 {
             Self::check(stderr)
         } else {
