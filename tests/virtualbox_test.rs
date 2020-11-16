@@ -24,7 +24,6 @@ mod tests {
         vboxmanage_vm: Option<String>,
         vboxmanage_guest_username: Option<String>,
         vboxmanage_guest_password: Option<String>,
-        vboxmanage_encoding: Option<String>,
     }
 
     fn assert_uuid(x: &str) {
