@@ -445,4 +445,3 @@ impl SnapshotCmd for VBoxManage {
         Self::delete_snapshot(self, name)
     }
 }
-

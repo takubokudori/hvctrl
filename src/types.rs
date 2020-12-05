@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use std::process::Command;
 use winwrap::string::AString;
 
-/// Executes `cmd` and Returns (stdout, stderr).
+/// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VMResult<(String, String)> {
     match cmd.output() {
         Ok(o) => {
@@ -46,6 +46,8 @@ pub enum ErrorKind {
     VMNotFound,
     NetworkNotFound,
     NetworkAdaptorNotFound,
+    /// Requires any privileges to control a VM.
+    PrivilegesRequired,
 }
 
 impl From<Repr> for VMError {
