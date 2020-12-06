@@ -101,7 +101,7 @@ impl HyperVCmd {
     }
 
     /// `Copy-VMFile` to copy a file from a guest to host.
-    pub fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str, create_full_path: bool) -> VMResult<()> {
+    pub fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str, create_full_path: bool, is_force: bool) -> VMResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
             "Copy-VMFile", self.vm.as_str(),
@@ -110,12 +110,13 @@ impl HyperVCmd {
             "-FileSource", "Host",
         ]);
         if create_full_path { cmd.arg("-CreateFullPath"); }
+        if is_force { cmd.arg("-Force"); }
         let _ = self.exec(&mut cmd, "Copy-VMFile")?;
         Ok(())
     }
 
     /// `Copy-VMFile` to copy a file from guest to host.
-    pub fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str, create_full_path: bool) -> VMResult<()> {
+    pub fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str, create_full_path: bool, is_force: bool) -> VMResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
             "Copy-VMFile", self.vm.as_str(),
@@ -124,6 +125,7 @@ impl HyperVCmd {
             "-FileSource", "Guest",
         ]);
         if create_full_path { cmd.arg("-CreateFullPath"); }
+        if is_force { cmd.arg("-Force"); }
         let _ = self.exec(&mut cmd, "Copy-VMFile")?;
         Ok(())
     }
