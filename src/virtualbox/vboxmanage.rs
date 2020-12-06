@@ -1,6 +1,6 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2 license.
-//! VirtualBox controllers.
+//! VBoxManage controller.
 use crate::types::*;
 use std::process::Command;
 use std::time::Duration;
