@@ -2,9 +2,10 @@
 name = "hvctrl"
 version = "0.1.0"
 authors = ["takubokudori <takubokudori@gmail.com>"]
-license = "Apache-2.0"
+license = "MIT or Apache-2.0"
 repository = "https://github.com/takubokudori/hvctrl"
-keywords = ["hypervisor", "VMWare", "VirtualBox"]
+homepage = "https://github.com/takubokudori/hvctrl"
+keywords = ["hypervisor", "VMWare", "VirtualBox", "Hyper-V"]
 description = "Hypervisor controller library"
 readme = "README.md"
 edition = "2018"

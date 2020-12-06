@@ -1,3 +1,6 @@
+// Copyright takubokudori.
+// This source code is licensed under the MIT or Apache-2 license.
+//! Hyper-V controllers.
 use crate::types::*;
 use std::process::Command;
 

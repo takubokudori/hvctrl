@@ -1,3 +1,5 @@
+// Copyright takubokudori.
+// This source code is licensed under the MIT or Apache-2 license.
 use serde::{Serialize, Deserialize};
 use std::process::Command;
 use winwrap::string::AString;
