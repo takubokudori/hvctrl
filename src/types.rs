@@ -34,20 +34,21 @@ pub enum Repr {
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ErrorKind {
     AuthenticationFailed,
-    GuestAuthenticationFailed,
     ExecutionFailed(String),
     FileError(String),
+    GuestAuthenticationFailed,
     InvalidParameter(String),
+    InvalidVMState,
+    NetworkAdaptorNotFound,
+    NetworkNotFound,
+    /// Requires any privileges to control a VM.
+    PrivilegesRequired,
     SnapshotNotFound,
     UnexpectedResponse(String),
     UnsupportedCommand,
     VMIsNotRunning,
     VMIsRunning,
     VMNotFound,
-    NetworkNotFound,
-    NetworkAdaptorNotFound,
-    /// Requires any privileges to control a VM.
-    PrivilegesRequired,
 }
 
 impl From<Repr> for VMError {

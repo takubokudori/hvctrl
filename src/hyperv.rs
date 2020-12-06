@@ -43,8 +43,14 @@ impl HyperVCmd {
 
     #[inline]
     fn handle_error(s: &str) -> VMError {
+        const IP: &str = "Cannot validate argument on parameter '";
         starts_err!(s, "You do not have the required permission to complete this task.", ErrorKind::PrivilegesRequired);
         starts_err!(s, "Hyper-V was unable to find a virtual machine with name", ErrorKind::VMNotFound);
+        starts_err!(s, "The operation cannot be performed while the virtual machine is in its current state.", ErrorKind::InvalidVMState);
+        if s.starts_with(IP) {
+            let p = s[IP.len()..].find("'.").unwrap();
+            return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
+        }
         VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
