@@ -181,7 +181,8 @@ impl VBoxManage {
             Desc,
             DescCont,
         }
-        let s = self.exec(self.cmd().args(&["snapshot", &self.vm, "list", "--machinereadable"]))?;
+        let s = self.exec(
+            self.cmd().args(&["snapshot", &self.vm, "list", "--machinereadable"]))?;
         let mut last_state = State::Init;
 
         let mut ret = vec![];

@@ -89,6 +89,7 @@ pub trait PowerCmd {
     fn suspend(&self) -> VMResult<()>;
     /// Resumes a VM and waits for the VM to start.
     fn resume(&self) -> VMResult<()>;
+    /// Returns `true` if a VM is running.
     fn is_running(&self) -> VMResult<bool>;
     /// Reboots a VM softly and waits for the VM to start.
     fn reboot(&self) -> VMResult<()>;
@@ -123,8 +124,11 @@ pub trait GuestCmd {
 pub trait NICCmd {
     /// Returns NICs of a VM.
     fn list_nics(&self) -> VMResult<Vec<NIC>>;
+    /// Adds a NIC to a VM.
     fn add_nic(&self, nic: &NIC) -> VMResult<()>;
+    /// Updates a NIC.
     fn update_nic(&self, nic: &NIC) -> VMResult<()>;
+    /// Removes a NIC from a VM.
     fn remove_nic(&self, nic: &NIC) -> VMResult<()>;
 }
 
@@ -139,6 +143,7 @@ pub trait SharedFolderCmd {
     fn delete_shared_folder(&self, shfs: &SharedFolder) -> VMResult<()>;
 }
 
+/// Represents a VM information.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct VM {
     pub id: Option<String>,
@@ -161,6 +166,7 @@ impl PartialEq for VM {
     }
 }
 
+/// Represents a snapshot of a VM.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct Snapshot {
     pub id: Option<String>,
@@ -180,7 +186,7 @@ impl PartialEq for Snapshot {
     }
 }
 
-/// Represents NIC type.
+/// Represents a NIC type.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum NICType {
     Bridge,
@@ -189,6 +195,7 @@ pub enum NICType {
     Custom(String),
 }
 
+/// Represents a NIC.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct NIC {
     pub id: Option<String>,
@@ -197,6 +204,7 @@ pub struct NIC {
     pub mac_address: Option<String>,
 }
 
+/// Represents a shared folder.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct SharedFolder {
     pub id: Option<String>,
@@ -206,6 +214,7 @@ pub struct SharedFolder {
     pub is_readonly: bool,
 }
 
+/// Represents a VM power state.
 #[derive(Debug, Eq, PartialEq)]
 pub enum VMPowerState {
     Running,

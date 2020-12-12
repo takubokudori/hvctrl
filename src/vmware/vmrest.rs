@@ -333,6 +333,7 @@ impl VMRest {
                     vmnet,
                 }
             })?);
+
         let s = self.execute(v)?;
         let r: NICDevice = Self::deserialize(&s)?;
 

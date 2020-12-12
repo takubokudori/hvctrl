@@ -25,6 +25,14 @@ pub struct HyperVCmd {
     vm: String,
 }
 
+macro_rules! make_pwsh_array {
+    ($cmd:ident, $v:ident)=> (
+        $cmd.arg("@(");
+        $cmd.args($v.iter().map(|x| pwsh_escape(*x)));
+        $cmd.arg(")");
+    )
+}
+
 impl HyperVCmd {
     pub fn new() -> Self {
         Self {
@@ -103,6 +111,48 @@ impl HyperVCmd {
             }).collect())
     }
 
+    pub fn start_vm(&self, vms: &[&str]) -> VMResult<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("Start-VM");
+        make_pwsh_array!(cmd, vms);
+        self.exec(&mut cmd, "Start-VM")?;
+        Ok(())
+    }
+
+    pub fn restart_vm(&self, vms: &[&str]) -> VMResult<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("Restart-VM");
+        make_pwsh_array!(cmd, vms);
+        self.exec(&mut cmd, "Restart-VM")?;
+        Ok(())
+    }
+
+    pub fn stop_vm(&self, vms: &[&str], turn_off: bool, use_save: bool) -> VMResult<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("Stop-VM");
+        make_pwsh_array!(cmd, vms);
+        self.exec(&mut cmd, "Stop-VM")?;
+        if turn_off { cmd.arg("-TurnOff"); }
+        if use_save { cmd.arg("-Save"); }
+        Ok(())
+    }
+
+    pub fn suspend_vm(&self, vms: &[&str]) -> VMResult<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("Suspend-VM");
+        make_pwsh_array!(cmd, vms);
+        self.exec(&mut cmd, "Suspend-VM")?;
+        Ok(())
+    }
+
+    pub fn resume_vm(&self, vms: &[&str]) -> VMResult<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("Resume-VM");
+        make_pwsh_array!(cmd, vms);
+        self.exec(&mut cmd, "Resume-VM")?;
+        Ok(())
+    }
+
     /// `Copy-VMFile` to copy a file from a guest to host.
     pub fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str, create_full_path: bool, is_force: bool) -> VMResult<()> {
         let mut cmd = self.cmd();
@@ -131,6 +181,49 @@ impl HyperVCmd {
         if is_force { cmd.arg("-Force"); }
         let _ = self.exec(&mut cmd, "Copy-VMFile")?;
         Ok(())
+    }
+}
+
+impl PowerCmd for HyperVCmd {
+    fn start(&self) -> VMResult<()> {
+        self.start_vm(&[&self.vm])
+    }
+
+    fn stop(&self) -> VMResult<()> {
+        self.stop_vm(&[&self.vm], false, false)
+    }
+
+    fn hard_stop(&self) -> VMResult<()> {
+        self.stop_vm(&[&self.vm], true, false)
+    }
+
+    fn suspend(&self) -> VMResult<()> {
+        self.suspend_vm(&[&self.vm])
+    }
+
+    fn resume(&self) -> VMResult<()> {
+        self.resume_vm(&[&self.vm])
+    }
+
+    fn is_running(&self) -> VMResult<bool> {
+        unimplemented!()
+    }
+
+    fn reboot(&self) -> VMResult<()> {
+        self.stop()?;
+        self.start()
+    }
+
+    fn hard_reboot(&self) -> VMResult<()> {
+        self.restart_vm(&[&self.vm])
+    }
+
+    fn pause(&self) -> VMResult<()> {
+        self.suspend()
+    }
+
+    fn unpause(&self) -> VMResult<()> {
+        self.resume()
     }
 }
 
