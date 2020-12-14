@@ -1,5 +1,5 @@
 // Copyright takubokudori.
-// This source code is licensed under the MIT or Apache-2 license.
+// This source code is licensed under the MIT or Apache-2.0 license.
 //! If you want to run tests, please write your VM configuration to `tests/config.toml`.
 //!
 //! # config.toml example

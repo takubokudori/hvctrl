@@ -1,14 +1,16 @@
 // Copyright takubokudori.
-// This source code is licensed under the MIT or Apache-2 license.
+// This source code is licensed under the MIT or Apache-2.0 license.
 use serde::{Serialize, Deserialize};
 use std::process::Command;
-use winwrap::string::AString;
+use windy::AString;
 
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VMResult<(String, String)> {
     match cmd.output() {
         Ok(o) => {
-            Ok((AString::new(o.stdout).to_string_lossy(), AString::new(o.stderr).to_string_lossy()))
+            unsafe {
+                Ok((AString::new_unchecked(o.stdout).to_string_lossy(), AString::new_unchecked(o.stderr).to_string_lossy()))
+            }
         }
         Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string())))
     }
