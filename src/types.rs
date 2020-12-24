@@ -71,12 +71,12 @@ pub type VMResult<T> = Result<T, VMError>;
 
 #[macro_export]
 macro_rules! vmerr {
-    ($x:expr) => { Err(crate::types::VMError::from($x)) }
+    ($x:expr) => { Err($crate::types::VMError::from($x)) }
 }
 
 macro_rules! starts_err {
     ($s:expr, $x:expr, $y:expr) => {
-        if $s.starts_with($x) { return crate::types::VMError::from($y); }
+        if $s.starts_with($x) { return $crate::types::VMError::from($y); }
      }
 }
 
