@@ -60,6 +60,10 @@ impl ToString for VMRestPowerCommand {
     }
 }
 
+impl Default for VMRest {
+    fn default() -> Self { Self::new() }
+}
+
 impl VMRest {
     pub fn new() -> Self {
         Self {
@@ -118,8 +122,8 @@ impl VMRest {
                 };
                 for d in stdout.lines() {
                     const SHO: &str = "Serving HTTP on ";
-                    if d.starts_with(SHO) {
-                        self.url = d[SHO.len()..].to_string();
+                    if let Some(d) = d.strip_prefix(SHO) {
+                        self.url = d.to_string();
                         return Ok(());
                     }
                 }
@@ -199,9 +203,8 @@ impl VMRest {
     fn handle_json_error(s: &str) -> VMError {
         const RP: &str = "Redundant parameter: ";
         const OOP: &str = "One of the parameters was invalid: ";
-        starts_err!(s,RP,ErrorKind::InvalidParameter(s[RP.len()..].to_string()));
-        starts_err!(s,OOP,ErrorKind::InvalidParameter(s[OOP.len()..].to_string()));
-
+        if let Some(s) = s.strip_prefix(RP) { return VMError::from(ErrorKind::InvalidParameter(s.to_string())); }
+        if let Some(s) = s.strip_prefix(OOP) { return VMError::from(ErrorKind::InvalidParameter(s.to_string())); }
         match s {
             "Authentication failed" => VMError::from(ErrorKind::AuthenticationFailed),
             "The virtual machine is not powered on" => VMError::from(ErrorKind::VMIsNotRunning),

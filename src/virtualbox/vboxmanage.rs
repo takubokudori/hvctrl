@@ -15,6 +15,10 @@ pub struct VBoxManage {
     guest_domain: Option<String>,
 }
 
+impl Default for VBoxManage {
+    fn default() -> Self { Self::new() }
+}
+
 impl VBoxManage {
     pub fn new() -> Self {
         Self {
@@ -74,7 +78,7 @@ impl VBoxManage {
         starts_err!(s, "The specified user was not able to logon on guest", ErrorKind::GuestAuthenticationFailed);
         if s.starts_with("FsObjQueryInfo failed on") || s.starts_with("File ") {
             let s = s.lines().last().unwrap();
-            return VMError::from(ErrorKind::FileError(s[s.rfind(":").unwrap() + 2..].to_string()));
+            return VMError::from(ErrorKind::FileError(s[s.rfind(':').unwrap() + 2..].to_string()));
         }
         if s.starts_with("Invalid machine state: PoweredOff") || s.starts_with("Machine in invalid state 1 -- powered off") {
             return VMError::from(ErrorKind::VMIsNotRunning);
@@ -100,7 +104,7 @@ impl VBoxManage {
 
     fn exec(&self, cmd: &mut Command) -> VMResult<String> {
         let (stdout, stderr) = exec_cmd(cmd)?;
-        if stderr.len() != 0 {
+        if !stderr.is_empty() {
             Self::check(stderr)
         } else {
             Ok(stdout)
@@ -125,7 +129,7 @@ impl VBoxManage {
         // "vm name" {uuid}
         Ok(s.lines()
             .map(|x| {
-                let v = x.rsplitn(2, " ").collect::<Vec<&str>>();
+                let v = x.rsplitn(2, ' ').collect::<Vec<&str>>();
                 VM {
                     id: Some(v[0].to_string()),
                     name: Some(v[1][1..v[1].len() - 1].to_string()),
@@ -212,7 +216,7 @@ impl VBoxManage {
                 State::Init => {
                     match now_data {
                         State::Name => {
-                            let p = x.find("=").expect("Invalid name");
+                            let p = x.find('=').expect("Invalid name");
                             sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }
@@ -222,7 +226,7 @@ impl VBoxManage {
                 State::Name => {
                     match now_data {
                         State::UUID => {
-                            let p = x.find("=").expect("Invalid UUID");
+                            let p = x.find('=').expect("Invalid UUID");
                             sn.id = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::UUID;
                         }
@@ -232,7 +236,7 @@ impl VBoxManage {
                 State::UUID => {
                     match now_data {
                         State::Desc => {
-                            let p = x.find("=").expect("Invalid description");
+                            let p = x.find('=').expect("Invalid description");
                             cur_detail = x[p + 2..].to_string();
                             last_state = State::Desc;
                         }
@@ -245,7 +249,7 @@ impl VBoxManage {
                             sn.detail = Some(cur_detail[..cur_detail.len() - 1].to_string());
                             ret.push(sn.clone());
                             cur_detail = "".to_string();
-                            let p = x.find("=").expect("Invalid name");
+                            let p = x.find('=').expect("Invalid name");
                             sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }
@@ -266,7 +270,7 @@ impl VBoxManage {
                             sn.detail = Some(cur_detail[..cur_detail.len() - 1].to_string());
                             ret.push(sn.clone());
                             cur_detail = "".to_string();
-                            let p = x.find("=").expect("Invalid name");
+                            let p = x.find('=').expect("Invalid name");
                             sn.name = Some(x[p + 2..x.len() - 1].to_string());
                             last_state = State::Name;
                         }

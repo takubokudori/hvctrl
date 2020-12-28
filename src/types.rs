@@ -146,7 +146,7 @@ pub trait SharedFolderCmd {
 }
 
 /// Represents a VM information.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VM {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -169,7 +169,7 @@ impl PartialEq for VM {
 }
 
 /// Represents a snapshot of a VM.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Snapshot {
     pub id: Option<String>,
     pub name: Option<String>,

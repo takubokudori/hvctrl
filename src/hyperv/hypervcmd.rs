@@ -33,12 +33,18 @@ macro_rules! make_pwsh_array {
     )
 }
 
-impl HyperVCmd {
-    pub fn new() -> Self {
+impl Default for HyperVCmd {
+    fn default() -> Self {
         Self {
             executable_path: "powershell".to_string(),
             vm: "".to_string(),
         }
+    }
+}
+
+impl HyperVCmd {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Sets the path to HyperVCmd.
@@ -58,10 +64,16 @@ impl HyperVCmd {
         starts_err!(s, "You do not have the required permission to complete this task.", ErrorKind::PrivilegesRequired);
         starts_err!(s, "Hyper-V was unable to find a virtual machine with name", ErrorKind::VMNotFound);
         starts_err!(s, "The operation cannot be performed while the virtual machine is in its current state.", ErrorKind::InvalidVMState);
+        if let Some(s) = s.strip_prefix(IP) {
+            let p = s.find("'.").unwrap();
+            return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
+        }
+        /*
         if s.starts_with(IP) {
             let p = s[IP.len()..].find("'.").unwrap();
             return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
         }
+         */
         VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
@@ -77,7 +89,7 @@ impl HyperVCmd {
 
     fn exec(&self, cmd: &mut Command, cmd_name: &str) -> VMResult<String> {
         let (stdout, stderr) = exec_cmd(cmd)?;
-        if stderr.len() != 0 {
+        if !stderr.is_empty() {
             Self::check(stderr, cmd_name)
         } else {
             Ok(stdout)
