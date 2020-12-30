@@ -68,23 +68,15 @@ impl HyperVCmd {
             let p = s.find("'.").unwrap();
             return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
         }
-        /*
-        if s.starts_with(IP) {
-            let p = s[IP.len()..].find("'.").unwrap();
-            return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
-        }
-         */
         VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
     #[inline]
     fn check(s: String, cmd_name: &str) -> VMResult<String> {
         let error_str = format!("{} : ", cmd_name);
-        if s.starts_with(&error_str) {
-            Err(Self::handle_error(&s[error_str.len()..].trim()))
-        } else {
-            Ok(s)
-        }
+        if let Some(s) = s.strip_prefix(&error_str) {
+            Err(Self::handle_error(s.trim()))
+        } else { Ok(s) }
     }
 
     fn exec(&self, cmd: &mut Command, cmd_name: &str) -> VMResult<String> {
