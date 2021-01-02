@@ -15,7 +15,7 @@
 mod tests {
     use hvctrl::types::{NICType, PowerCmd};
     use hvctrl::vmware::VMRest;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VMRestConfig {
@@ -27,18 +27,27 @@ mod tests {
         vmrest_proxy: Option<String>,
     }
 
-
     fn get_cmd() -> VMRest {
         let x = std::fs::read_to_string("tests/config.toml").expect("Failed to read config.toml");
         let config: Result<VMRestConfig, toml::de::Error> = toml::from_str(&x);
         match config {
             Ok(config) => {
                 let mut cmd = VMRest::new();
-                if let Some(x) = config.vmrest_path { cmd = cmd.vmrest_path(x); }
-                if let Some(x) = config.vmrest_url { cmd = cmd.url(x); }
-                if let Some(x) = config.vmrest_username { cmd = cmd.username(x); }
-                if let Some(x) = config.vmrest_password { cmd = cmd.password(x); }
-                if let Some(x) = config.vmrest_proxy { cmd = cmd.proxy(x); }
+                if let Some(x) = config.vmrest_path {
+                    cmd = cmd.vmrest_path(x);
+                }
+                if let Some(x) = config.vmrest_url {
+                    cmd = cmd.url(x);
+                }
+                if let Some(x) = config.vmrest_username {
+                    cmd = cmd.username(x);
+                }
+                if let Some(x) = config.vmrest_password {
+                    cmd = cmd.password(x);
+                }
+                if let Some(x) = config.vmrest_proxy {
+                    cmd = cmd.proxy(x);
+                }
                 if let Some(x) = config.vmrest_vm {
                     let id = cmd.get_vm_id_from_path(&x).expect("VM Not Found");
                     cmd = cmd.vm_id(id);

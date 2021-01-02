@@ -11,7 +11,9 @@ fn pwsh_escape(s: &str) -> String {
     let mut ret = String::with_capacity(s.as_bytes().len() + 2);
     ret.push('"');
     for ch in s.chars() {
-        if ch == '`' || ch == '"' { ret.push('`'); }
+        if ch == '`' || ch == '"' {
+            ret.push('`');
+        }
         ret.push(ch);
     }
     ret.push('"');
@@ -26,11 +28,11 @@ pub struct HyperVCmd {
 }
 
 macro_rules! make_pwsh_array {
-    ($cmd:ident, $v:ident)=> (
+    ($cmd:ident, $v:ident) => {
         $cmd.arg("@(");
         $cmd.args($v.iter().map(|x| pwsh_escape(*x)));
         $cmd.arg(")");
-    )
+    };
 }
 
 impl Default for HyperVCmd {
@@ -61,12 +63,26 @@ impl HyperVCmd {
     #[inline]
     fn handle_error(s: &str) -> VMError {
         const IP: &str = "Cannot validate argument on parameter '";
-        starts_err!(s, "You do not have the required permission to complete this task.", ErrorKind::PrivilegesRequired);
-        starts_err!(s, "Hyper-V was unable to find a virtual machine with name", ErrorKind::VMNotFound);
-        starts_err!(s, "The operation cannot be performed while the virtual machine is in its current state.", ErrorKind::InvalidVMState);
+        starts_err!(
+            s,
+            "You do not have the required permission to complete this task.",
+            ErrorKind::PrivilegesRequired
+        );
+        starts_err!(
+            s,
+            "Hyper-V was unable to find a virtual machine with name",
+            ErrorKind::VMNotFound
+        );
+        starts_err!(
+            s,
+            "The operation cannot be performed while the virtual machine is in its current state.",
+            ErrorKind::InvalidVMState
+        );
         if let Some(s) = s.strip_prefix(IP) {
             let p = s.find("'.").unwrap();
-            return VMError::from(ErrorKind::InvalidParameter(s[IP.len()..IP.len() + p].to_string()));
+            return VMError::from(ErrorKind::InvalidParameter(
+                s[IP.len()..IP.len() + p].to_string(),
+            ));
         }
         VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
@@ -76,7 +92,9 @@ impl HyperVCmd {
         let error_str = format!("{} : ", cmd_name);
         if let Some(s) = s.strip_prefix(&error_str) {
             Err(Self::handle_error(s.trim()))
-        } else { Ok(s) }
+        } else {
+            Ok(s)
+        }
     }
 
     fn exec(&self, cmd: &mut Command, cmd_name: &str) -> VMResult<String> {
@@ -87,7 +105,6 @@ impl HyperVCmd {
             Ok(stdout)
         }
     }
-
 
     #[inline]
     fn cmd(&self) -> Command {
@@ -104,7 +121,7 @@ impl HyperVCmd {
         let s = self.exec(self.cmd().args(&["Get-VM", "|select Name"]), "Get-VM")?;
         Ok(s.lines()
             .skip(3) // skip `Name\n----`.
-            .filter(|x| *x != "")
+            .filter(|x| !x.is_empty())
             .map(|x| {
                 let t = x.trim_end().to_string();
                 VM {
@@ -136,8 +153,12 @@ impl HyperVCmd {
         cmd.arg("Stop-VM");
         make_pwsh_array!(cmd, vms);
         self.exec(&mut cmd, "Stop-VM")?;
-        if turn_off { cmd.arg("-TurnOff"); }
-        if use_save { cmd.arg("-Save"); }
+        if turn_off {
+            cmd.arg("-TurnOff");
+        }
+        if use_save {
+            cmd.arg("-Save");
+        }
         Ok(())
     }
 
@@ -158,31 +179,59 @@ impl HyperVCmd {
     }
 
     /// `Copy-VMFile` to copy a file from a guest to host.
-    pub fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str, create_full_path: bool, is_force: bool) -> VMResult<()> {
+    pub fn copy_from_host_to_guest(
+        &self,
+        from_host_path: &str,
+        to_guest_path: &str,
+        create_full_path: bool,
+        is_force: bool,
+    ) -> VMResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
-            "Copy-VMFile", self.vm.as_str(),
-            "-SourcePath", &pwsh_escape(from_host_path),
-            "-DestinationPath", &pwsh_escape(to_guest_path),
-            "-FileSource", "Host",
+            "Copy-VMFile",
+            self.vm.as_str(),
+            "-SourcePath",
+            &pwsh_escape(from_host_path),
+            "-DestinationPath",
+            &pwsh_escape(to_guest_path),
+            "-FileSource",
+            "Host",
         ]);
-        if create_full_path { cmd.arg("-CreateFullPath"); }
-        if is_force { cmd.arg("-Force"); }
+        if create_full_path {
+            cmd.arg("-CreateFullPath");
+        }
+        if is_force {
+            cmd.arg("-Force");
+        }
         let _ = self.exec(&mut cmd, "Copy-VMFile")?;
         Ok(())
     }
 
     /// `Copy-VMFile` to copy a file from guest to host.
-    pub fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str, create_full_path: bool, is_force: bool) -> VMResult<()> {
+    pub fn copy_from_guest_to_host(
+        &self,
+        from_guest_path: &str,
+        to_host_path: &str,
+        create_full_path: bool,
+        is_force: bool,
+    ) -> VMResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
-            "Copy-VMFile", self.vm.as_str(),
-            "-SourcePath", &pwsh_escape(from_guest_path),
-            "-DestinationPath", &pwsh_escape(to_host_path),
-            "-FileSource", "Guest",
+            "Copy-VMFile",
+            self.vm.as_str(),
+            "-SourcePath",
+            &pwsh_escape(from_guest_path),
+            "-DestinationPath",
+            &pwsh_escape(to_host_path),
+            "-FileSource",
+            "Guest",
         ]);
-        if create_full_path { cmd.arg("-CreateFullPath"); }
-        if is_force { cmd.arg("-Force"); }
+        if create_full_path {
+            cmd.arg("-CreateFullPath");
+        }
+        if is_force {
+            cmd.arg("-Force");
+        }
         let _ = self.exec(&mut cmd, "Copy-VMFile")?;
         Ok(())
     }
@@ -234,7 +283,13 @@ impl PowerCmd for HyperVCmd {
 #[test]
 fn test_pwsh_escape() {
     assert_eq!("\"MSEdge - Win10\"", pwsh_escape("MSEdge - Win10"));
-    assert_eq!("\"`\"MSEdge - Win10`\"\"", pwsh_escape("\"MSEdge - Win10\""));
-    assert_eq!("\"MSEdge - Win10`\";calc.exe #\"", pwsh_escape("MSEdge - Win10\";calc.exe #"));
+    assert_eq!(
+        "\"`\"MSEdge - Win10`\"\"",
+        pwsh_escape("\"MSEdge - Win10\"")
+    );
+    assert_eq!(
+        "\"MSEdge - Win10`\";calc.exe #\"",
+        pwsh_escape("MSEdge - Win10\";calc.exe #")
+    );
     assert_eq!("\"MSEdge - Win10``\"", pwsh_escape("MSEdge - Win10`"));
 }

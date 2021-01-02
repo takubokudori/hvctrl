@@ -1,18 +1,19 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::process::Command;
 use windy::AString;
 
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VMResult<(String, String)> {
     match cmd.output() {
-        Ok(o) => {
-            unsafe {
-                Ok((AString::new_unchecked(o.stdout).to_string_lossy(), AString::new_unchecked(o.stderr).to_string_lossy()))
-            }
-        }
-        Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string())))
+        Ok(o) => unsafe {
+            Ok((
+                AString::new_unchecked(o.stdout).to_string_lossy(),
+                AString::new_unchecked(o.stderr).to_string_lossy(),
+            ))
+        },
+        Err(x) => Err(VMError::from(ErrorKind::ExecutionFailed(x.to_string()))),
     }
 }
 
@@ -63,7 +64,9 @@ impl From<Repr> for VMError {
 
 impl From<ErrorKind> for VMError {
     fn from(e: ErrorKind) -> Self {
-        Self { repr: Repr::Simple(e) }
+        Self {
+            repr: Repr::Simple(e),
+        }
     }
 }
 
@@ -71,13 +74,17 @@ pub type VMResult<T> = Result<T, VMError>;
 
 #[macro_export]
 macro_rules! vmerr {
-    ($x:expr) => { Err($crate::types::VMError::from($x)) }
+    ($x:expr) => {
+        Err($crate::types::VMError::from($x))
+    };
 }
 
 macro_rules! starts_err {
     ($s:expr, $x:expr, $y:expr) => {
-        if $s.starts_with($x) { return $crate::types::VMError::from($y); }
-     }
+        if $s.starts_with($x) {
+            return $crate::types::VMError::from($y);
+        }
+    };
 }
 
 pub trait PowerCmd {
@@ -228,5 +235,7 @@ pub enum VMPowerState {
 
 impl VMPowerState {
     #[inline]
-    pub fn is_running(&self) -> bool { *self == Self::Running }
+    pub fn is_running(&self) -> bool {
+        *self == Self::Running
+    }
 }

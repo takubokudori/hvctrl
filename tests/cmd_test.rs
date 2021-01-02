@@ -1,8 +1,10 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
-use hvctrl::types::{PowerCmd, ErrorKind, VMResult, VMError, SnapshotCmd, Snapshot};
+use hvctrl::types::{ErrorKind, PowerCmd, Snapshot, SnapshotCmd, VMError, VMResult};
 
-fn err(r: ErrorKind) -> VMResult<()> { Err(VMError::from(r)) }
+fn err(r: ErrorKind) -> VMResult<()> {
+    Err(VMError::from(r))
+}
 
 /// At first, make sure that a VM is not running.
 pub fn power_test(cmd: &impl PowerCmd) {
@@ -28,7 +30,9 @@ pub fn snapshot_test<T: SnapshotCmd + PowerCmd>(cmd: &T) {
         v.iter().any(|x| {
             if let Some(n) = &x.name {
                 n == name
-            } else { false }
+            } else {
+                false
+            }
         })
     }
     // assert_eq!(Ok(()), cmd.start());
@@ -36,11 +40,23 @@ pub fn snapshot_test<T: SnapshotCmd + PowerCmd>(cmd: &T) {
     assert!(v.is_ok());
     let v = v.unwrap();
     assert!(!is_snapshot_exists(&v, SN_NAME));
-    assert_eq!(err(ErrorKind::SnapshotNotFound), cmd.delete_snapshot(SN_NAME));
-    assert_eq!(err(ErrorKind::SnapshotNotFound), cmd.revert_snapshot(SN_NAME));
+    assert_eq!(
+        err(ErrorKind::SnapshotNotFound),
+        cmd.delete_snapshot(SN_NAME)
+    );
+    assert_eq!(
+        err(ErrorKind::SnapshotNotFound),
+        cmd.revert_snapshot(SN_NAME)
+    );
     assert_eq!(Ok(()), cmd.take_snapshot(SN_NAME));
     assert_eq!(Ok(()), cmd.revert_snapshot(SN_NAME));
     assert_eq!(Ok(()), cmd.delete_snapshot(SN_NAME));
-    assert_eq!(err(ErrorKind::SnapshotNotFound), cmd.delete_snapshot(SN_NAME));
-    assert_eq!(err(ErrorKind::SnapshotNotFound), cmd.revert_snapshot(SN_NAME));
+    assert_eq!(
+        err(ErrorKind::SnapshotNotFound),
+        cmd.delete_snapshot(SN_NAME)
+    );
+    assert_eq!(
+        err(ErrorKind::SnapshotNotFound),
+        cmd.revert_snapshot(SN_NAME)
+    );
 }

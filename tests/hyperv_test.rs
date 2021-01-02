@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod tests {
     use hvctrl::hyperv::HyperVCmd;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct HyperVCmdConfig {
@@ -25,8 +25,12 @@ mod tests {
         match config {
             Ok(config) => {
                 let mut cmd = HyperVCmd::new();
-                if let Some(x) = config.powershell_path { cmd = cmd.executable_path(x); }
-                if let Some(x) = config.hyperv_cmd_vm { cmd = cmd.vm(x); }
+                if let Some(x) = config.powershell_path {
+                    cmd = cmd.executable_path(x);
+                }
+                if let Some(x) = config.hyperv_cmd_vm {
+                    cmd = cmd.vm(x);
+                }
                 cmd
             }
             Err(e) => panic!("Filed to parse config.toml: {}", e),

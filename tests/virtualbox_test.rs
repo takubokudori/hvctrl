@@ -18,7 +18,7 @@ mod tests {
     use crate::cmd_test;
     use hvctrl::types::*;
     use hvctrl::virtualbox::VBoxManage;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct VBoxManageConfig {
@@ -29,7 +29,11 @@ mod tests {
     }
 
     fn assert_uuid(x: &str) {
-        assert!(regex::Regex::new(r#"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#).unwrap().is_match(x))
+        assert!(regex::Regex::new(
+            r#"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
+        )
+        .unwrap()
+        .is_match(x))
     }
 
     fn get_cmd() -> VBoxManage {
@@ -38,10 +42,18 @@ mod tests {
         match config {
             Ok(config) => {
                 let mut cmd = VBoxManage::new();
-                if let Some(x) = config.vboxmanage_path { cmd = cmd.executable_path(x); }
-                if let Some(x) = config.vboxmanage_vm { cmd = cmd.vm(x); }
-                if let Some(x) = config.vboxmanage_guest_username { cmd = cmd.guest_username(x); }
-                if let Some(x) = config.vboxmanage_guest_password { cmd = cmd.guest_password(x); }
+                if let Some(x) = config.vboxmanage_path {
+                    cmd = cmd.executable_path(x);
+                }
+                if let Some(x) = config.vboxmanage_vm {
+                    cmd = cmd.vm(x);
+                }
+                if let Some(x) = config.vboxmanage_guest_username {
+                    cmd = cmd.guest_username(x);
+                }
+                if let Some(x) = config.vboxmanage_guest_password {
+                    cmd = cmd.guest_password(x);
+                }
                 cmd
             }
             Err(e) => panic!("Filed to parse config.toml: {}", e),
@@ -107,17 +119,23 @@ mod tests {
 
     #[test]
     fn run_command_test() {
-        println!("{:?}", get_cmd().run_command(&["C:\\Windows\\notepad.exe"]));
+        println!("{:?}", get_cmd().run_command(&[r"C:\Windows\notepad.exe"]));
     }
 
     #[test]
     fn copy_from_test() {
-        println!("{:?}", get_cmd().copy_from("C:\\Windows\\notepad.exe", "C:\\test"));
+        println!(
+            "{:?}",
+            get_cmd().copy_from(r"C:\Windows\notepad.exe", r"C:test")
+        );
     }
 
     #[test]
     fn copy_to_test() {
-        println!("{:?}", get_cmd().copy_to("C:\\Windows\\notepad.exe", "C:\\test"));
+        println!(
+            "{:?}",
+            get_cmd().copy_to(r"C:\Windows\notepad.exe", r"C:\test")
+        );
     }
 
     #[test]
@@ -132,8 +150,8 @@ mod tests {
     }
 
     #[test]
-    fn list_sn(){
-        println!("{:?}",get_cmd().list_snapshots());
+    fn list_sn() {
+        println!("{:?}", get_cmd().list_snapshots());
     }
 
     #[test]
