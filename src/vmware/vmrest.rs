@@ -124,7 +124,7 @@ impl VMRest {
                         return vmerr!(Repr::Unknown(format!(
                             "Failed to convert stdout: {}",
                             x.to_string()
-                        )))
+                        )));
                     }
                 };
                 for d in stdout.lines() {
@@ -188,7 +188,7 @@ impl VMRest {
                 return vmerr!(Repr::Unknown(format!(
                     "Failed to convert error: {}",
                     x.to_string()
-                )))
+                )));
             }
         };
         if is_success {
