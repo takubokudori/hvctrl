@@ -61,7 +61,7 @@ impl HyperVCmd {
     }
 
     #[inline]
-    fn handle_error(s: &str) -> VMError {
+    fn handle_error(s: &str) -> VmError {
         const IP: &str = "Cannot validate argument on parameter '";
         starts_err!(
             s,
@@ -71,24 +71,24 @@ impl HyperVCmd {
         starts_err!(
             s,
             "Hyper-V was unable to find a virtual machine with name",
-            ErrorKind::VMNotFound
+            ErrorKind::VmNotFound
         );
         starts_err!(
             s,
             "The operation cannot be performed while the virtual machine is in its current state.",
-            ErrorKind::InvalidVMState
+            ErrorKind::InvalidVmState
         );
         if let Some(s) = s.strip_prefix(IP) {
             let p = s.find("'.").unwrap();
-            return VMError::from(ErrorKind::InvalidParameter(
+            return VmError::from(ErrorKind::InvalidParameter(
                 s[IP.len()..IP.len() + p].to_string(),
             ));
         }
-        VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
+        VmError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
     #[inline]
-    fn check(s: String, cmd_name: &str) -> VMResult<String> {
+    fn check(s: String, cmd_name: &str) -> VmResult<String> {
         let error_str = format!("{} : ", cmd_name);
         if let Some(s) = s.strip_prefix(&error_str) {
             Err(Self::handle_error(s.trim()))
@@ -97,7 +97,7 @@ impl HyperVCmd {
         }
     }
 
-    fn exec(&self, cmd: &mut Command, cmd_name: &str) -> VMResult<String> {
+    fn exec(&self, cmd: &mut Command, cmd_name: &str) -> VmResult<String> {
         let (stdout, stderr) = exec_cmd(cmd)?;
         if !stderr.is_empty() {
             Self::check(stderr, cmd_name)
@@ -117,14 +117,14 @@ impl HyperVCmd {
         ret
     }
 
-    pub fn list_vms(&self) -> VMResult<Vec<VM>> {
+    pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
         let s = self.exec(self.cmd().args(&["Get-VM", "|select Name"]), "Get-VM")?;
         Ok(s.lines()
             .skip(3) // skip `Name\n----`.
             .filter(|x| !x.is_empty())
             .map(|x| {
                 let t = x.trim_end().to_string();
-                VM {
+                Vm {
                     id: Some(t.clone()),
                     name: Some(t),
                     path: None,
@@ -132,7 +132,7 @@ impl HyperVCmd {
             }).collect())
     }
 
-    pub fn start_vm(&self, vms: &[&str]) -> VMResult<()> {
+    pub fn start_vm(&self, vms: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.arg("Start-VM");
         make_pwsh_array!(cmd, vms);
@@ -140,7 +140,7 @@ impl HyperVCmd {
         Ok(())
     }
 
-    pub fn restart_vm(&self, vms: &[&str]) -> VMResult<()> {
+    pub fn restart_vm(&self, vms: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.arg("Restart-VM");
         make_pwsh_array!(cmd, vms);
@@ -148,7 +148,7 @@ impl HyperVCmd {
         Ok(())
     }
 
-    pub fn stop_vm(&self, vms: &[&str], turn_off: bool, use_save: bool) -> VMResult<()> {
+    pub fn stop_vm(&self, vms: &[&str], turn_off: bool, use_save: bool) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.arg("Stop-VM");
         make_pwsh_array!(cmd, vms);
@@ -162,7 +162,7 @@ impl HyperVCmd {
         Ok(())
     }
 
-    pub fn suspend_vm(&self, vms: &[&str]) -> VMResult<()> {
+    pub fn suspend_vm(&self, vms: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.arg("Suspend-VM");
         make_pwsh_array!(cmd, vms);
@@ -170,7 +170,7 @@ impl HyperVCmd {
         Ok(())
     }
 
-    pub fn resume_vm(&self, vms: &[&str]) -> VMResult<()> {
+    pub fn resume_vm(&self, vms: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.arg("Resume-VM");
         make_pwsh_array!(cmd, vms);
@@ -185,7 +185,7 @@ impl HyperVCmd {
         to_guest_path: &str,
         create_full_path: bool,
         is_force: bool,
-    ) -> VMResult<()> {
+    ) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
             "Copy-VMFile",
@@ -214,7 +214,7 @@ impl HyperVCmd {
         to_host_path: &str,
         create_full_path: bool,
         is_force: bool,
-    ) -> VMResult<()> {
+    ) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&[
             "Copy-VMFile",
@@ -238,44 +238,44 @@ impl HyperVCmd {
 }
 
 impl PowerCmd for HyperVCmd {
-    fn start(&self) -> VMResult<()> {
+    fn start(&self) -> VmResult<()> {
         self.start_vm(&[&self.vm])
     }
 
-    fn stop(&self) -> VMResult<()> {
+    fn stop(&self) -> VmResult<()> {
         self.stop_vm(&[&self.vm], false, false)
     }
 
-    fn hard_stop(&self) -> VMResult<()> {
+    fn hard_stop(&self) -> VmResult<()> {
         self.stop_vm(&[&self.vm], true, false)
     }
 
-    fn suspend(&self) -> VMResult<()> {
+    fn suspend(&self) -> VmResult<()> {
         self.suspend_vm(&[&self.vm])
     }
 
-    fn resume(&self) -> VMResult<()> {
+    fn resume(&self) -> VmResult<()> {
         self.resume_vm(&[&self.vm])
     }
 
-    fn is_running(&self) -> VMResult<bool> {
+    fn is_running(&self) -> VmResult<bool> {
         unimplemented!()
     }
 
-    fn reboot(&self) -> VMResult<()> {
+    fn reboot(&self) -> VmResult<()> {
         self.stop()?;
         self.start()
     }
 
-    fn hard_reboot(&self) -> VMResult<()> {
+    fn hard_reboot(&self) -> VmResult<()> {
         self.restart_vm(&[&self.vm])
     }
 
-    fn pause(&self) -> VMResult<()> {
+    fn pause(&self) -> VmResult<()> {
         self.suspend()
     }
 
-    fn unpause(&self) -> VMResult<()> {
+    fn unpause(&self) -> VmResult<()> {
         self.resume()
     }
 }

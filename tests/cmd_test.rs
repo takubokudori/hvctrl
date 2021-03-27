@@ -1,16 +1,16 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
-use hvctrl::types::{ErrorKind, PowerCmd, Snapshot, SnapshotCmd, VMError, VMResult};
+use hvctrl::types::{ErrorKind, PowerCmd, Snapshot, SnapshotCmd, VmError, VmResult};
 
-fn err(r: ErrorKind) -> VMResult<()> {
-    Err(VMError::from(r))
+fn err(r: ErrorKind) -> VmResult<()> {
+    Err(VmError::from(r))
 }
 
 /// At first, make sure that a VM is not running.
 pub fn power_test(cmd: &impl PowerCmd) {
     assert_eq!(Ok(false), cmd.is_running());
     assert_eq!(Ok(()), cmd.start());
-    assert_eq!(err(ErrorKind::VMIsRunning), cmd.start());
+    assert_eq!(err(ErrorKind::VmIsRunning), cmd.start());
     assert_eq!(Ok(true), cmd.is_running());
     assert_eq!(Ok(()), cmd.stop());
     assert_eq!(Ok(false), cmd.is_running());

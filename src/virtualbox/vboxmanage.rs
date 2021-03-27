@@ -82,11 +82,11 @@ impl VBoxManage {
     }
 
     #[inline]
-    fn handle_error(s: &str) -> VMError {
+    fn handle_error(s: &str) -> VmError {
         starts_err!(
             s,
             "Could not find a registered machine named",
-            ErrorKind::VMNotFound
+            ErrorKind::VmNotFound
         );
         starts_err!(
             s,
@@ -100,30 +100,30 @@ impl VBoxManage {
         );
         if s.starts_with("FsObjQueryInfo failed on") || s.starts_with("File ") {
             let s = s.lines().last().unwrap();
-            return VMError::from(ErrorKind::FileError(
+            return VmError::from(ErrorKind::FileError(
                 s[s.rfind(':').unwrap() + 2..].to_string(),
             ));
         }
         if s.starts_with("Invalid machine state: PoweredOff")
             || s.starts_with("Machine in invalid state 1 -- powered off")
         {
-            return VMError::from(ErrorKind::VMIsNotRunning);
+            return VmError::from(ErrorKind::VmIsNotRunning);
         }
-        if s.ends_with(" is not currently running") || s.find("is not running").is_some() {
-            return VMError::from(ErrorKind::VMIsNotRunning);
+        if s.ends_with(" is not currently running") || s.contains("is not running") {
+            return VmError::from(ErrorKind::VmIsNotRunning);
         }
         if s.lines()
             .next()
             .unwrap()
             .ends_with("is already locked by a session (or being locked or unlocked)")
         {
-            return VMError::from(ErrorKind::VMIsRunning);
+            return VmError::from(ErrorKind::VmIsRunning);
         }
-        VMError::from(Repr::Unknown(format!("Unknown error: {}", s)))
+        VmError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
 
     #[inline]
-    fn check(s: String) -> VMResult<String> {
+    fn check(s: String) -> VmResult<String> {
         const ERROR_STR: &str = "vboxmanage.exe: error: ";
         if (&s[..ERROR_STR.len()])
             .to_ascii_lowercase()
@@ -135,7 +135,7 @@ impl VBoxManage {
         }
     }
 
-    fn exec(&self, cmd: &mut Command) -> VMResult<String> {
+    fn exec(&self, cmd: &mut Command) -> VmResult<String> {
         let (stdout, stderr) = exec_cmd(cmd)?;
         if !stderr.is_empty() {
             Self::check(stderr)
@@ -145,7 +145,7 @@ impl VBoxManage {
     }
 
     #[inline]
-    fn exec2(&self, cmd: &mut Command) -> VMResult<()> {
+    fn exec2(&self, cmd: &mut Command) -> VmResult<()> {
         self.exec(cmd)?;
         Ok(())
     }
@@ -155,17 +155,17 @@ impl VBoxManage {
         Command::new(&self.executable_path)
     }
 
-    pub fn version(&self) -> VMResult<String> {
+    pub fn version(&self) -> VmResult<String> {
         Ok(self.exec(self.cmd().arg("-v"))?.trim().to_string())
     }
 
-    pub fn list_vms(&self) -> VMResult<Vec<VM>> {
+    pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
         let s = self.exec(self.cmd().args(&["list", "vms"]))?;
         // "vm name" {uuid}
         Ok(s.lines()
             .map(|x| {
                 let v = x.rsplitn(2, ' ').collect::<Vec<&str>>();
-                VM {
+                Vm {
                     id: Some(v[0].to_string()),
                     name: Some(v[1][1..v[1].len() - 1].to_string()),
                     path: None,
@@ -174,45 +174,45 @@ impl VBoxManage {
             .collect())
     }
 
-    pub fn show_vm_info(&self) -> VMResult<String> {
+    pub fn show_vm_info(&self) -> VmResult<String> {
         self.exec(
             self.cmd()
                 .args(&["showvminfo", &self.vm, "--machinereadable"]),
         )
     }
 
-    pub fn start_vm(&self) -> VMResult<()> {
+    pub fn start_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["startvm", &self.vm]))
     }
 
-    pub fn poweroff_vm(&self) -> VMResult<()> {
+    pub fn poweroff_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "poweroff"]))
     }
 
     /// Sends ACPI shutdown signal.
     ///
     /// If the VM is running, this function returns Ok(()) regardless of whether the VM was shut down.
-    pub fn acpi_power_button_vm(&self) -> VMResult<()> {
+    pub fn acpi_power_button_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "acpipowerbutton"]))
     }
 
-    pub fn reset_vm(&self) -> VMResult<()> {
+    pub fn reset_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "reset"]))
     }
 
-    pub fn pause_vm(&self) -> VMResult<()> {
+    pub fn pause_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "pause"]))
     }
 
-    pub fn resume_vm(&self) -> VMResult<()> {
+    pub fn resume_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "resume"]))
     }
 
-    pub fn save_state_vm(&self) -> VMResult<()> {
+    pub fn save_state_vm(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["controlvm", &self.vm, "savestate"]))
     }
 
-    pub fn list_snapshots(&self) -> VMResult<Vec<Snapshot>> {
+    pub fn list_snapshots(&self) -> VmResult<Vec<Snapshot>> {
         const SN_NAME: &str = "SnapshotName";
         const SN_UUID: &str = "SnapshotUUID";
         const SN_DESC: &str = "SnapshotDescription";
@@ -220,7 +220,7 @@ impl VBoxManage {
         enum State {
             Init,
             Name,
-            UUID,
+            Uuid,
             Desc,
             DescCont,
         }
@@ -241,7 +241,7 @@ impl VBoxManage {
             let now_data = if x.starts_with(SN_NAME) {
                 State::Name
             } else if x.starts_with(SN_UUID) {
-                State::UUID
+                State::Uuid
             } else if x.starts_with(SN_DESC) {
                 State::Desc
             } else if x.starts_with("CurrentSnapshotName=\"") {
@@ -265,14 +265,14 @@ impl VBoxManage {
                     _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                 },
                 State::Name => match now_data {
-                    State::UUID => {
+                    State::Uuid => {
                         let p = x.find('=').expect("Invalid UUID");
                         sn.id = Some(x[p + 2..x.len() - 1].to_string());
-                        last_state = State::UUID;
+                        last_state = State::Uuid;
                     }
                     _ => return vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
                 },
-                State::UUID => match now_data {
+                State::Uuid => match now_data {
                     State::Desc => {
                         let p = x.find('=').expect("Invalid description");
                         cur_detail = x[p + 2..].to_string();
@@ -291,13 +291,13 @@ impl VBoxManage {
                     }
                     State::DescCont => {
                         #[cfg(target_os = "windows")]
-                        {
-                            cur_detail += "\r\n";
-                        }
+                            {
+                                cur_detail += "\r\n";
+                            }
                         #[cfg(not(target_os = "windows"))]
-                        {
-                            cur_detail += "\n";
-                        }
+                            {
+                                cur_detail += "\n";
+                            }
                         cur_detail += x;
                         last_state = State::DescCont;
                     }
@@ -314,13 +314,13 @@ impl VBoxManage {
                     }
                     State::DescCont => {
                         #[cfg(target_os = "windows")]
-                        {
-                            cur_detail += "\r\n";
-                        }
+                            {
+                                cur_detail += "\r\n";
+                            }
                         #[cfg(not(target_os = "windows"))]
-                        {
-                            cur_detail += "\n";
-                        }
+                            {
+                                cur_detail += "\n";
+                            }
                         cur_detail += x;
                         last_state = State::DescCont;
                     }
@@ -336,7 +336,7 @@ impl VBoxManage {
         name: &str,
         description: Option<&str>,
         is_live: bool,
-    ) -> VMResult<()> {
+    ) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["snapshot", &self.vm, "take", name]);
         if let Some(x) = description {
@@ -348,19 +348,19 @@ impl VBoxManage {
         self.exec2(&mut cmd)
     }
 
-    pub fn delete_snapshot(&self, name: &str) -> VMResult<()> {
+    pub fn delete_snapshot(&self, name: &str) -> VmResult<()> {
         self.exec2(self.cmd().args(&["snapshot", &self.vm, "delete", name]))
     }
 
-    pub fn restore_snapshot(&self, name: &str) -> VMResult<()> {
+    pub fn restore_snapshot(&self, name: &str) -> VmResult<()> {
         self.exec2(self.cmd().args(&["snapshot", &self.vm, "restore", name]))
     }
 
-    pub fn restore_current_snapshot(&self) -> VMResult<()> {
+    pub fn restore_current_snapshot(&self) -> VmResult<()> {
         self.exec2(self.cmd().args(&["snapshot", &self.vm, "restorecurrent"]))
     }
 
-    pub fn run(&self, guest_args: &[&str]) -> VMResult<()> {
+    pub fn run(&self, guest_args: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["guestcontrol", &self.vm, "run"]);
         cmd.args(self.build_auth());
@@ -368,7 +368,7 @@ impl VBoxManage {
         self.exec2(&mut cmd)
     }
 
-    pub fn copy_from(&self, from_guest_path: &str, to_host_path: &str) -> VMResult<()> {
+    pub fn copy_from(&self, from_guest_path: &str, to_host_path: &str) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["guestcontrol", &self.vm, "copyfrom"]);
         cmd.args(self.build_auth());
@@ -376,7 +376,7 @@ impl VBoxManage {
         self.exec2(&mut cmd)
     }
 
-    pub fn copy_to(&self, from_host_path: &str, to_guest_path: &str) -> VMResult<()> {
+    pub fn copy_to(&self, from_host_path: &str, to_guest_path: &str) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["guestcontrol", &self.vm, "copyto"]);
         cmd.args(self.build_auth());
@@ -384,7 +384,7 @@ impl VBoxManage {
         self.exec2(&mut cmd)
     }
 
-    pub fn keyboard_put_scancode<T: Iterator<Item = u8>>(&self, v: T) -> VMResult<()> {
+    pub fn keyboard_put_scancode<T: Iterator<Item=u8>>(&self, v: T) -> VmResult<()> {
         use std::fmt::Write;
         let mut cmd = self.cmd();
         cmd.args(&["controlvm", &self.vm, "keyboardputscancode"]);
@@ -402,7 +402,7 @@ impl VBoxManage {
         self.exec2(&mut cmd)
     }
 
-    pub fn keyboard_put_string(&self, v: &[&str]) -> VMResult<()> {
+    pub fn keyboard_put_string(&self, v: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["controlvm", &self.vm, "keyboardputstring"]);
         cmd.args(self.build_auth());
@@ -412,16 +412,16 @@ impl VBoxManage {
 }
 
 impl PowerCmd for VBoxManage {
-    fn start(&self) -> VMResult<()> {
+    fn start(&self) -> VmResult<()> {
         self.start_vm()
     }
 
     /// Sends ACPI shutdown signals until the VM to stop.
-    fn stop(&self) -> VMResult<()> {
+    fn stop(&self) -> VmResult<()> {
         loop {
             // Polling every second.
             let status = self.acpi_power_button_vm();
-            if status == vmerr!(ErrorKind::VMIsNotRunning) {
+            if status == vmerr!(ErrorKind::VmIsNotRunning) {
                 return Ok(());
             } else if let Err(x) = status {
                 return Err(x);
@@ -430,14 +430,14 @@ impl PowerCmd for VBoxManage {
         }
     }
 
-    fn hard_stop(&self) -> VMResult<()> {
+    fn hard_stop(&self) -> VmResult<()> {
         self.poweroff_vm()
     }
 
-    fn suspend(&self) -> VMResult<()> {
+    fn suspend(&self) -> VmResult<()> {
         loop {
             let status = self.save_state_vm();
-            if status == vmerr!(ErrorKind::VMIsNotRunning) {
+            if status == vmerr!(ErrorKind::VmIsNotRunning) {
                 return Ok(());
             } else if status
                 == vmerr!(Repr::Unknown(
@@ -452,11 +452,11 @@ impl PowerCmd for VBoxManage {
         }
     }
 
-    fn resume(&self) -> VMResult<()> {
+    fn resume(&self) -> VmResult<()> {
         self.start_vm()
     }
 
-    fn is_running(&self) -> VMResult<bool> {
+    fn is_running(&self) -> VmResult<bool> {
         const VMS: &str = "VMState=\"";
         let s = self.show_vm_info()?;
         for x in s.lines() {
@@ -467,13 +467,13 @@ impl PowerCmd for VBoxManage {
         vmerr!(ErrorKind::UnexpectedResponse(s))
     }
 
-    fn reboot(&self) -> VMResult<()> {
+    fn reboot(&self) -> VmResult<()> {
         self.stop()?;
         loop {
             let status = self.start();
             if status == Ok(()) {
                 return Ok(());
-            } else if status == vmerr!(ErrorKind::VMIsRunning) {
+            } else if status == vmerr!(ErrorKind::VmIsRunning) {
                 // Do nothing
             } else if let Err(x) = status {
                 return Err(x);
@@ -481,47 +481,47 @@ impl PowerCmd for VBoxManage {
         }
     }
 
-    fn hard_reboot(&self) -> VMResult<()> {
+    fn hard_reboot(&self) -> VmResult<()> {
         self.reset_vm()
     }
 
-    fn pause(&self) -> VMResult<()> {
+    fn pause(&self) -> VmResult<()> {
         Self::pause_vm(self)
     }
 
-    fn unpause(&self) -> VMResult<()> {
+    fn unpause(&self) -> VmResult<()> {
         self.resume_vm()
     }
 }
 
 impl GuestCmd for VBoxManage {
-    fn run_command(&self, guest_args: &[&str]) -> VMResult<()> {
+    fn run_command(&self, guest_args: &[&str]) -> VmResult<()> {
         self.run(guest_args)
     }
 
-    fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str) -> VMResult<()> {
+    fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str) -> VmResult<()> {
         self.copy_from(from_guest_path, to_host_path)
     }
 
-    fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str) -> VMResult<()> {
+    fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str) -> VmResult<()> {
         self.copy_to(from_host_path, to_guest_path)
     }
 }
 
 impl SnapshotCmd for VBoxManage {
-    fn list_snapshots(&self) -> VMResult<Vec<Snapshot>> {
+    fn list_snapshots(&self) -> VmResult<Vec<Snapshot>> {
         Self::list_snapshots(self)
     }
 
-    fn take_snapshot(&self, name: &str) -> VMResult<()> {
+    fn take_snapshot(&self, name: &str) -> VmResult<()> {
         Self::take_snapshot(self, name, None, true)
     }
 
-    fn revert_snapshot(&self, name: &str) -> VMResult<()> {
+    fn revert_snapshot(&self, name: &str) -> VmResult<()> {
         self.restore_snapshot(name)
     }
 
-    fn delete_snapshot(&self, name: &str) -> VMResult<()> {
+    fn delete_snapshot(&self, name: &str) -> VmResult<()> {
         Self::delete_snapshot(self, name)
     }
 }

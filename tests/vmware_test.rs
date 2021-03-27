@@ -13,8 +13,8 @@
 //! ```
 #[cfg(test)]
 mod tests {
-    use hvctrl::types::{NICType, PowerCmd};
-    use hvctrl::vmware::VMRest;
+    use hvctrl::types::{NicType, PowerCmd};
+    use hvctrl::vmware::VmRest;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -27,12 +27,12 @@ mod tests {
         vmrest_proxy: Option<String>,
     }
 
-    fn get_cmd() -> VMRest {
+    fn get_cmd() -> VmRest {
         let x = std::fs::read_to_string("tests/config.toml").expect("Failed to read config.toml");
         let config: Result<VMRestConfig, toml::de::Error> = toml::from_str(&x);
         match config {
             Ok(config) => {
-                let mut cmd = VMRest::new();
+                let mut cmd = VmRest::new();
                 if let Some(x) = config.vmrest_path {
                     cmd = cmd.vmrest_path(x);
                 }
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn update_nic_test() {
-        println!("{:?}", get_cmd().update_nic(999, &NICType::Bridge));
-        println!("{:?}", get_cmd().update_nic(1, &NICType::HostOnly));
+        println!("{:?}", get_cmd().update_nic(999, &NicType::Bridge));
+        println!("{:?}", get_cmd().update_nic(1, &NicType::HostOnly));
     }
 }
