@@ -1,22 +1,14 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 //! VMRest controller.
-use crate::types::*;
+use crate::{deserialize, types::*};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::process::Command;
-
-#[derive(Clone, Debug)]
-pub struct VmRest {
-    vmrest_path: String,
-    url: String,
-    vm_id: String,
-    proxy: Option<String>,
-    encoding: String,
-    username: Option<String>,
-    password: Option<String>,
-}
+use std::{
+    io::Write,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum VmRestPowerCommand {
@@ -24,6 +16,21 @@ pub enum VmRestPowerCommand {
     Off,
     Shutdown,
     Suspend,
+}
+
+impl VmRestPowerCommand {
+    pub fn to_command(&self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+            Self::Shutdown => "shutdown",
+            Self::Suspend => "suspend",
+        }
+    }
+}
+
+impl ToString for VmRestPowerCommand {
+    fn to_string(&self) -> String { self.to_command().to_string() }
 }
 
 #[derive(Deserialize)]
@@ -39,31 +46,40 @@ struct NicDevice {
     mac_address: String,
 }
 
-fn conv(s: &str) -> NicType {
-    match s {
-        "bridged" => NicType::Bridge,
-        "nat" => NicType::NAT,
-        "hostOnly" => NicType::HostOnly,
-        "custom" => NicType::Custom("".to_string()),
-        _ => panic!("Unknown type: {}", s),
-    }
-}
-
-impl ToString for VmRestPowerCommand {
-    fn to_string(&self) -> String {
-        match self {
-            Self::On => "on".to_string(),
-            Self::Off => "off".to_string(),
-            Self::Shutdown => "shutdown".to_string(),
-            Self::Suspend => "suspend".to_string(),
+impl From<&str> for NicType {
+    fn from(s: &str) -> Self {
+        match s {
+            "bridged" => Self::Bridge,
+            "nat" => Self::NAT,
+            "hostOnly" => Self::HostOnly,
+            "custom" => Self::Custom("".to_string()),
+            _ => panic!("Unknown type: {}", s),
         }
     }
 }
 
+impl From<String> for NicType {
+    #[inline]
+    fn from(s: String) -> Self { Self::from(&s) }
+}
+impl From<&String> for NicType {
+    #[inline]
+    fn from(s: &String) -> Self { Self::from(s.as_str()) }
+}
+
+#[derive(Clone, Debug)]
+pub struct VmRest {
+    vmrest_path: String,
+    url: String,
+    vm_id: Option<String>,
+    proxy: Option<String>,
+    encoding: String,
+    username: Option<String>,
+    password: Option<String>,
+}
+
 impl Default for VmRest {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl VmRest {
@@ -71,45 +87,58 @@ impl VmRest {
         Self {
             vmrest_path: "vmrest".to_string(),
             url: "http://127.0.0.1:8697".to_string(),
-            vm_id: "".to_string(),
-            proxy: None,
             encoding: "utf-8".to_string(),
+            vm_id: None,
+            proxy: None,
             username: None,
             password: None,
         }
     }
 
-    pub fn vmrest_path<T: Into<String>>(mut self, vmrest_path: T) -> Self {
+    pub fn vmrest_path<T: Into<String>>(
+        &mut self,
+        vmrest_path: T,
+    ) -> &mut Self {
         self.vmrest_path = vmrest_path.into();
         self
     }
 
-    pub fn url<T: Into<String>>(mut self, url: T) -> Self {
+    pub fn url<T: Into<String>>(&mut self, url: T) -> &mut Self {
         self.url = url.into();
+        if !self.url.starts_with("http://") && self.url.starts_with("https://")
+        {
+            panic!("Invalid scheme specified in url: {}", self.url);
+        }
         self
     }
 
-    pub fn vm_id<T: Into<String>>(mut self, vm: T) -> Self {
-        self.vm_id = vm.into();
+    pub fn vm_id<T: Into<Option<String>>>(&mut self, vm_id: T) -> &mut Self {
+        self.vm_id = vm_id.into();
         self
     }
 
-    pub fn username<T: Into<String>>(mut self, username: T) -> Self {
-        self.username = Some(username.into());
+    pub fn username<T: Into<Option<String>>>(
+        &mut self,
+        username: T,
+    ) -> &mut Self {
+        self.username = username.into();
         self
     }
 
-    pub fn password<T: Into<String>>(mut self, password: T) -> Self {
-        self.password = Some(password.into());
+    pub fn password<T: Into<Option<String>>>(
+        &mut self,
+        password: T,
+    ) -> &mut Self {
+        self.password = password.into();
         self
     }
 
-    pub fn proxy<T: Into<String>>(mut self, proxy: T) -> Self {
-        self.proxy = Some(proxy.into());
+    pub fn proxy<T: Into<Option<String>>>(&mut self, proxy: T) -> &mut Self {
+        self.proxy = proxy.into();
         self
     }
 
-    pub fn encoding<T: Into<String>>(mut self, encoding: T) -> Self {
+    pub fn encoding<T: Into<String>>(&mut self, encoding: T) -> &mut Self {
         self.encoding = encoding.into();
         self
     }
@@ -146,7 +175,10 @@ impl VmRest {
             Ok(mut x) => {
                 let stdin = x.stdin.as_mut().unwrap();
                 stdin
-                    .write_fmt(format_args!("{}\n{}\n{}\n", username, password, password))
+                    .write_fmt(format_args!(
+                        "{}\n{}\n{}\n",
+                        username, password, password
+                    ))
                     .unwrap();
                 match x.wait_with_output() {
                     Ok(_) => Ok(()),
@@ -157,7 +189,10 @@ impl VmRest {
         }
     }
 
-    fn execute(&self, v: reqwest::blocking::RequestBuilder) -> VmResult<String> {
+    fn execute(
+        &self,
+        v: reqwest::blocking::RequestBuilder,
+    ) -> VmResult<String> {
         let v = v.header("Accept", "application/vnd.vmware.vmw.rest-v1+json");
         let v = if let Some(x) = &self.username {
             v.basic_auth(x, self.password.as_ref())
@@ -180,7 +215,10 @@ impl VmRest {
         }
     }
 
-    fn handle_response(resp: reqwest::blocking::Response, encoding: &str) -> VmResult<String> {
+    fn handle_response(
+        resp: reqwest::blocking::Response,
+        encoding: &str,
+    ) -> VmResult<String> {
         let is_success = resp.status() == StatusCode::OK;
         let text = match resp.text_with_charset(encoding) {
             Ok(x) => x,
@@ -199,7 +237,7 @@ impl VmRest {
     }
 
     pub fn handle_error(s: String) -> VmResult<String> {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Deserialize)]
         struct VmRestFailedResponse {
             #[serde(alias = "Code")]
             code: i32,
@@ -227,9 +265,15 @@ impl VmRest {
             return VmError::from(ErrorKind::InvalidParameter(s.to_string()));
         }
         match s {
-            "Authentication failed" => VmError::from(ErrorKind::AuthenticationFailed),
-            "The virtual machine is not powered on" => VmError::from(ErrorKind::VmIsNotRunning),
-            "The virtual network cannot be found" => VmError::from(ErrorKind::NetworkNotFound),
+            "Authentication failed" => {
+                VmError::from(ErrorKind::AuthenticationFailed)
+            }
+            "The virtual machine is not powered on" => VmError::from(
+                ErrorKind::InvalidPowerState(VmPowerState::NotRunning),
+            ),
+            "The virtual network cannot be found" => {
+                VmError::from(ErrorKind::NetworkNotFound)
+            }
             "The network adapter cannot be found" => {
                 VmError::from(ErrorKind::NetworkAdaptorNotFound)
             }
@@ -244,13 +288,7 @@ impl VmRest {
         }
     }
 
-    fn deserialize<'a, T: Deserialize<'a>>(s: &'a str) -> VmResult<T> {
-        match serde_json::from_str(s) {
-            Ok(x) => Ok(x),
-            Err(x) => vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
-        }
-    }
-
+    /// Gets the VM ID from the path.
     pub fn get_vm_id_from_path(&self, path: &str) -> VmResult<String> {
         let vms = self.list_vms()?;
         for vm in vms {
@@ -263,29 +301,58 @@ impl VmRest {
         vmerr!(ErrorKind::VmNotFound)
     }
 
+    fn get_vm_id(&self) -> VmResult<&str> {
+        match &self.vm_id {
+            Some(x) => Ok(x),
+            None => vmerr!(ErrorKind::VmIsNotSpecified),
+        }
+    }
+
+    pub fn version(&self) -> VmResult<String> {
+        let cli = self.get_client()?;
+        let v = cli.get(&format!("{}/json/swagger.json", self.url));
+        let s = self.execute(v)?;
+
+        fn find<'a>(s: &'a str, pat: &str) -> VmResult<&'a str> {
+            match s.find(pat) {
+                Some(x) => Ok(&s[x + pat.len()..]),
+                None => vmerr!(ErrorKind::UnexpectedResponse(s.to_string())),
+            }
+        }
+        let s = find(&s, "description\"")?;
+        let s = find(s, "\"")?;
+        let m = s.find(',').unwrap();
+        Ok(s[..m - 1].to_string())
+    }
+
     pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
         let cli = self.get_client()?;
         let v = cli.get(&format!("{}/api/vms", self.url));
         let s = self.execute(v)?;
-        Self::deserialize(&s)
+        deserialize(&s)
     }
 
     pub fn delete_vm(&self) -> VmResult<()> {
         let cli = self.get_client()?;
-        let v = cli.delete(&format!("{}/api/vms/{}", self.url, self.vm_id));
+        let v =
+            cli.delete(&format!("{}/api/vms/{}", self.url, self.get_vm_id()?));
         let s = self.execute(v)?;
-        Self::deserialize(&s)
+        deserialize(&s)
     }
 
     pub fn get_power_state(&self) -> VmResult<VmPowerState> {
         let cli = self.get_client()?;
-        let v = cli.get(&format!("{}/api/vms/{}/power", self.url, self.vm_id));
+        let v = cli.get(&format!(
+            "{}/api/vms/{}/power",
+            self.url,
+            self.get_vm_id()?
+        ));
         let s = self.execute(v)?;
         #[derive(Deserialize)]
         struct Resp {
             power_state: String,
         }
-        let r: Resp = Self::deserialize(&s)?;
+        let r: Resp = deserialize(&s)?;
         match r.power_state.as_str() {
             "poweredOn" => Ok(VmPowerState::Running),
             "poweredOff" => Ok(VmPowerState::Stopped),
@@ -294,44 +361,51 @@ impl VmRest {
         }
     }
 
-    pub fn set_power_state(&self, state: &VmRestPowerCommand) -> VmResult<()> {
+    pub fn set_power_state(
+        &self,
+        state: &VmRestPowerCommand,
+    ) -> VmResult<VmPowerState> {
         let cli = self.get_client()?;
         let v = cli
-            .put(&format!("{}/api/vms/{}/power", self.url, self.vm_id))
+            .put(&format!("{}/api/vms/{}/power", self.url, self.get_vm_id()?))
             .header("Content-Type", "application/vnd.vmware.vmw.rest-v1+json")
-            .body(state.to_string());
+            .body(state.to_command());
         let s = self.execute(v)?;
         #[derive(Deserialize)]
         struct Resp {
             power_state: String,
         }
-        let r: Resp = Self::deserialize(&s)?;
-        match (r.power_state.as_str(), state) {
-            ("poweredOn", VmRestPowerCommand::On)
-            | ("poweredOff", VmRestPowerCommand::Off)
-            | ("poweredOff", VmRestPowerCommand::Shutdown)
-            | ("suspended", VmRestPowerCommand::Suspend) => Ok(()),
-            _ => Err(VmError::from(Repr::Unknown(
-                "Failed to change power state".to_string(),
-            ))),
+        let r: Resp = deserialize(&s)?;
+        match r.power_state.as_str() {
+            "poweredOn" => Ok(VmPowerState::Running),
+            "poweredOff" => Ok(VmPowerState::Stopped),
+            "suspended" => Ok(VmPowerState::Suspended),
+            x => {
+                vmerr!(ErrorKind::UnexpectedResponse(format!(
+                    "set_power_state: {}",
+                    x
+                )))
+            }
         }
     }
 
     pub fn get_ip_address(&self) -> VmResult<String> {
         let cli = self.get_client()?;
-        let v = cli.get(&format!("{}/api/vms/{}/ip", self.url, self.vm_id));
+        let v =
+            cli.get(&format!("{}/api/vms/{}/ip", self.url, self.get_vm_id()?));
         let s = self.execute(v)?;
         #[derive(Deserialize)]
         struct Resp {
             ip: String,
         }
-        let r: Resp = Self::deserialize(&s)?;
+        let r: Resp = deserialize(&s)?;
         Ok(r.ip)
     }
 
     pub fn list_nics(&self) -> VmResult<Vec<Nic>> {
         let cli = self.get_client()?;
-        let v = cli.get(&format!("{}/api/vms/{}/nic", self.url, self.vm_id));
+        let v =
+            cli.get(&format!("{}/api/vms/{}/nic", self.url, self.get_vm_id()?));
         let s = self.execute(v)?;
 
         #[derive(Deserialize)]
@@ -339,14 +413,14 @@ impl VmRest {
             num: usize,
             nics: Vec<NicDevice>,
         }
-        let r: NicDevices = Self::deserialize(&s)?;
+        let r: NicDevices = deserialize(&s)?;
         assert_eq!(r.num, r.nics.len());
         Ok(r.nics
             .iter()
             .map(|x| Nic {
                 id: Some(x.index.to_string()),
                 name: Some(x.vmnet.clone()),
-                ty: Some(conv(&x.ty)),
+                ty: Some(x.ty.as_str().into()),
                 mac_address: Some(x.mac_address.clone()),
             })
             .collect())
@@ -361,25 +435,27 @@ impl VmRest {
             vmnet: Option<String>,
         }
         let v = cli
-            .post(&format!("{}/api/vms/{}/nic", self.url, self.vm_id))
+            .post(&format!("{}/api/vms/{}/nic", self.url, self.get_vm_id()?))
             .header("Content-Type", "application/vnd.vmware.vmw.rest-v1+json")
             .body(Self::serialize({
                 let (ty, vmnet) = match ty {
                     NicType::NAT => ("nat".to_string(), None),
                     NicType::Bridge => ("bridged".to_string(), None),
                     NicType::HostOnly => ("hostonly".to_string(), None),
-                    NicType::Custom(x) => ("custom".to_string(), Some(x.to_string())),
+                    NicType::Custom(x) => {
+                        ("custom".to_string(), Some(x.to_string()))
+                    }
                 };
                 &Req { ty, vmnet }
             })?);
 
         let s = self.execute(v)?;
-        let r: NicDevice = Self::deserialize(&s)?;
+        let r: NicDevice = deserialize(&s)?;
 
         Ok(Nic {
             id: Some(r.index.to_string()),
             name: Some(r.vmnet),
-            ty: Some(conv(&r.ty)),
+            ty: Some(r.ty.into()),
             mac_address: Some(r.mac_address),
         })
     }
@@ -395,7 +471,9 @@ impl VmRest {
         let v = cli
             .put(&format!(
                 "{}/api/vms/{}/nic/{}",
-                self.url, self.vm_id, index
+                self.url,
+                self.get_vm_id()?,
+                index
             ))
             .header("Content-Type", "application/vnd.vmware.vmw.rest-v1+json")
             .body(Self::serialize({
@@ -403,15 +481,20 @@ impl VmRest {
                     NicType::NAT => ("nat".to_string(), None),
                     NicType::Bridge => ("bridged".to_string(), None),
                     NicType::HostOnly => ("hostonly".to_string(), None),
-                    NicType::Custom(x) => ("custom".to_string(), Some(x.to_string())),
+                    NicType::Custom(x) => {
+                        ("custom".to_string(), Some(x.to_string()))
+                    }
                 };
                 &Req { ty, vmnet }
             })?);
 
         let s = self.execute(v)?;
-        let r: NicDevice = Self::deserialize(&s)?;
+        let r: NicDevice = deserialize(&s)?;
         if r.index != index {
-            return vmerr!(ErrorKind::UnexpectedResponse(format!("{}", r.index)));
+            return vmerr!(ErrorKind::UnexpectedResponse(format!(
+                "{}",
+                r.index
+            )));
         }
         Ok(())
     }
@@ -420,7 +503,9 @@ impl VmRest {
         let cli = self.get_client()?;
         let v = cli.delete(&format!(
             "{}/api/vms/{}/nic/{}",
-            self.url, self.vm_id, index
+            self.url,
+            self.get_vm_id()?,
+            index
         ));
         self.execute(v)?;
         Ok(())
@@ -430,7 +515,8 @@ impl VmRest {
         let cli = self.get_client()?;
         let v = cli.get(&format!(
             "{}/api/vms/{}/sharedfolders",
-            self.url, self.vm_id
+            self.url,
+            self.get_vm_id()?
         ));
         let s = self.execute(v)?;
         #[derive(Deserialize)]
@@ -440,7 +526,7 @@ impl VmRest {
             /// 0(R) or 4(RW)
             flags: i32,
         }
-        let r: Vec<Resp> = Self::deserialize(&s)?;
+        let r: Vec<Resp> = deserialize(&s)?;
         Ok(r.iter()
             .map(|x| SharedFolder {
                 id: Some(x.folder_id.clone()),
@@ -464,7 +550,8 @@ impl VmRest {
         let v = cli
             .post(&format!(
                 "{}/api/vms/{}/sharedfolders",
-                self.url, self.vm_id
+                self.url,
+                self.get_vm_id()?
             ))
             .header("Content-Type", "application/vnd.vmware.vmw.rest-v1+json")
             .body(Self::serialize(
@@ -500,67 +587,126 @@ impl VmRest {
         let cli = self.get_client()?;
         let v = cli.delete(&format!(
             "{}/api/vms/{}/sharedfolders/{}",
-            self.url, self.vm_id, folder_id
+            self.url,
+            self.get_vm_id()?,
+            folder_id
         ));
         self.execute(v)?;
         Ok(())
     }
 }
 
+fn expected_power_state(
+    res: VmResult<VmPowerState>,
+    expected: VmPowerState,
+) -> VmResult<()> {
+    match res {
+        Ok(x) if x == expected => Ok(()),
+        Ok(x) => vmerr!(ErrorKind::InvalidPowerState(x)),
+        Err(x) => Err(x),
+    }
+}
+
 impl PowerCmd for VmRest {
     fn start(&self) -> VmResult<()> {
-        self.set_power_state(&VmRestPowerCommand::On)
+        if self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Running));
+        }
+        expected_power_state(
+            self.set_power_state(&VmRestPowerCommand::On),
+            VmPowerState::Running,
+        )
     }
 
-    fn stop(&self) -> VmResult<()> {
-        self.set_power_state(&VmRestPowerCommand::Shutdown)
+    fn stop<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()> {
+        let timeout = timeout.into();
+        let s = Instant::now();
+        if !self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::NotRunning
+            ));
+        }
+        loop {
+            if let Some(timeout) = timeout {
+                if s.elapsed() >= timeout {
+                    return vmerr!(ErrorKind::Timeout);
+                }
+            }
+            match self.set_power_state(&VmRestPowerCommand::Shutdown) {
+                Ok(VmPowerState::Stopped) => return Ok(()),
+                Ok(VmPowerState::Running) => { /* Does nothing */ }
+                Ok(x) => return vmerr!(ErrorKind::InvalidPowerState(x)),
+                Err(x) => return Err(x),
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
     }
 
     fn hard_stop(&self) -> VmResult<()> {
-        self.set_power_state(&VmRestPowerCommand::Off)
+        if !self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::NotRunning
+            ));
+        }
+        expected_power_state(
+            self.set_power_state(&VmRestPowerCommand::Off),
+            VmPowerState::Stopped,
+        )
     }
 
     fn suspend(&self) -> VmResult<()> {
-        self.set_power_state(&VmRestPowerCommand::On)
+        if !self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::NotRunning
+            ));
+        }
+        expected_power_state(
+            self.set_power_state(&VmRestPowerCommand::Suspend),
+            VmPowerState::Suspended,
+        )
     }
 
-    fn resume(&self) -> VmResult<()> {
-        self.set_power_state(&VmRestPowerCommand::On)
-    }
+    fn resume(&self) -> VmResult<()> { self.start() }
 
     fn is_running(&self) -> VmResult<bool> {
         Ok(self.get_power_state()? == VmPowerState::Running)
     }
 
-    fn reboot(&self) -> VmResult<()> {
-        let _ = self.stop();
+    fn reboot<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()> {
+        if !self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::NotRunning
+            ));
+        }
+        self.stop(timeout)?;
         self.start()
     }
 
     fn hard_reboot(&self) -> VmResult<()> {
+        if !self.get_power_state()?.is_running() {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::NotRunning
+            ));
+        }
         let _ = self.hard_stop();
         self.start()
     }
 
-    fn pause(&self) -> VmResult<()> {
-        vmerr!(ErrorKind::UnsupportedCommand)
-    }
+    fn pause(&self) -> VmResult<()> { vmerr!(ErrorKind::UnsupportedCommand) }
 
-    fn unpause(&self) -> VmResult<()> {
-        vmerr!(ErrorKind::UnsupportedCommand)
-    }
+    fn unpause(&self) -> VmResult<()> { vmerr!(ErrorKind::UnsupportedCommand) }
 }
 
 impl NicCmd for VmRest {
-    fn list_nics(&self) -> VmResult<Vec<Nic>> {
-        VmRest::list_nics(self)
-    }
+    fn list_nics(&self) -> VmResult<Vec<Nic>> { VmRest::list_nics(self) }
 
     fn add_nic(&self, nic: &Nic) -> VmResult<()> {
         if let Some(ty) = &nic.ty {
             VmRest::create_nic(self, ty)?;
         } else {
-            return vmerr!(ErrorKind::InvalidParameter("ty is required".to_string()));
+            return vmerr!(ErrorKind::InvalidParameter(
+                "ty is required".to_string()
+            ));
         }
         Ok(())
     }

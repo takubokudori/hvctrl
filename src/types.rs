@@ -1,7 +1,7 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::{process::Command, time::Duration};
 use windy::AString;
 
 /// Executes `cmd` and Returns `(stdout, stderr)`.
@@ -26,7 +26,22 @@ impl std::error::Error for VmError {}
 
 impl std::fmt::Display for VmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        "test".fmt(f)
+        format!("{:?}", self).fmt(f)
+    }
+}
+
+impl VmError {
+    pub fn get_invalid_state(&self) -> Option<VmPowerState> {
+        match &self.repr {
+            Repr::Simple(ErrorKind::InvalidPowerState(x)) => Some(*x),
+            _ => None,
+        }
+    }
+
+    pub fn get_repr(&self) -> &Repr { &self.repr }
+
+    pub fn is_invalid_state_running(&self) -> Option<bool> {
+        self.get_invalid_state().map(|x| x.is_running())
     }
 }
 
@@ -43,23 +58,25 @@ pub enum ErrorKind {
     FileError(String),
     GuestAuthenticationFailed,
     InvalidParameter(String),
-    InvalidVmState,
+    /// InvalidPowerState contains the current VM power state.
+    InvalidPowerState(VmPowerState),
     NetworkAdaptorNotFound,
     NetworkNotFound,
     /// Requires any privileges to control a VM.
     PrivilegesRequired,
+    /// The guest service (e.g., [VirtualBox Guest Additions](https://www.virtualbox.org/manual/ch04.html#guestadd-intro), [VMware Tools](https://docs.vmware.com/en/VMware-Tools/index.html), [Hyper-V Integration Service](https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/reference/integration-services), etc...) that controls a VM is not running, ready or installed.
+    ServiceIsNotRunning,
     SnapshotNotFound,
+    /// The specified action was not completed in time.
+    Timeout,
     UnexpectedResponse(String),
     UnsupportedCommand,
-    VmIsNotRunning,
-    VmIsRunning,
+    VmIsNotSpecified,
     VmNotFound,
 }
 
 impl From<Repr> for VmError {
-    fn from(repr: Repr) -> Self {
-        Self { repr }
-    }
+    fn from(repr: Repr) -> Self { Self { repr } }
 }
 
 impl From<ErrorKind> for VmError {
@@ -87,29 +104,33 @@ macro_rules! starts_err {
     };
 }
 
+/// A trait for managing power state of a VM.
 pub trait PowerCmd {
-    /// Starts a VM and waits for the VM to start.
+    /// Starts the VM and waits for the VM to start.
     fn start(&self) -> VmResult<()>;
-    /// Stops a VM softly and waits for the VM to stop.
-    fn stop(&self) -> VmResult<()>;
-    /// Stops a VM hardly and waits for the VM to stop.
+    /// Stops the VM softly and waits for the VM to stop.
+    ///
+    /// This function usually only sends a ACPI shutdown signal, so there is no guarantee that calling this function will shut down the VM.
+    fn stop<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()>;
+    /// Stops the VM hardly and waits for the VM to stop.
     fn hard_stop(&self) -> VmResult<()>;
-    /// Suspends a VM and waits for the VM to suspend.
+    /// Suspends the VM and waits for the VM to suspend.
     fn suspend(&self) -> VmResult<()>;
-    /// Resumes a VM and waits for the VM to start.
+    /// Resumes the suspended VM.
     fn resume(&self) -> VmResult<()>;
-    /// Returns `true` if a VM is running.
+    /// Returns `true` if the VM is running.
     fn is_running(&self) -> VmResult<bool>;
-    /// Reboots a VM softly and waits for the VM to start.
-    fn reboot(&self) -> VmResult<()>;
-    /// Reboots a VM hardly and waits for the VM to start.
+    /// Reboots the VM softly and waits for the VM to start.
+    fn reboot<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()>;
+    /// Reboots the VM hardly and waits for the VM to start.
     fn hard_reboot(&self) -> VmResult<()>;
-    /// Pauses a VM and waits for the VM to pause.
+    /// Pauses the VM and waits for the VM to pause.
     fn pause(&self) -> VmResult<()>;
-    /// Unpauses a VM and waits for the VM to unpause.
+    /// Unpauses the VM and waits for the VM to unpause.
     fn unpause(&self) -> VmResult<()>;
 }
 
+/// A trait for managing snapshots of a VM.
 pub trait SnapshotCmd {
     /// Returns snapshots of a VM.
     fn list_snapshots(&self) -> VmResult<Vec<Snapshot>>;
@@ -121,15 +142,25 @@ pub trait SnapshotCmd {
     fn delete_snapshot(&self, name: &str) -> VmResult<()>;
 }
 
+/// A trait for controlling a guest OS.
 pub trait GuestCmd {
-    /// Runs a command in guest.
-    fn run_command(&self, guest_args: &[&str]) -> VmResult<()>;
+    /// Executes a command on guest.
+    fn exec_cmd(&self, guest_args: &[&str]) -> VmResult<()>;
     /// Copies a file from a guest to a host.
-    fn copy_from_guest_to_host(&self, from_guest_path: &str, to_host_path: &str) -> VmResult<()>;
+    fn copy_from_guest_to_host(
+        &self,
+        from_guest_path: &str,
+        to_host_path: &str,
+    ) -> VmResult<()>;
     /// Copies a file from a host to a guest.
-    fn copy_from_host_to_guest(&self, from_host_path: &str, to_guest_path: &str) -> VmResult<()>;
+    fn copy_from_host_to_guest(
+        &self,
+        from_host_path: &str,
+        to_guest_path: &str,
+    ) -> VmResult<()>;
 }
 
+/// A trait for managing NICs of a VM.
 pub trait NicCmd {
     /// Returns NICs of a VM.
     fn list_nics(&self) -> VmResult<Vec<Nic>>;
@@ -141,6 +172,7 @@ pub trait NicCmd {
     fn remove_nic(&self, nic: &Nic) -> VmResult<()>;
 }
 
+/// A trait for managing shared folders of a VM.
 pub trait SharedFolderCmd {
     /// Returns shared folders of a VM.
     fn list_shared_folders(&self) -> VmResult<Vec<SharedFolder>>;
@@ -155,8 +187,11 @@ pub trait SharedFolderCmd {
 /// Represents a VM information.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Vm {
+    /// Unique ID for the VM.
     pub id: Option<String>,
+    /// The name of the VM.
     pub name: Option<String>,
+    /// The path to the VM file.
     pub path: Option<String>,
 }
 
@@ -225,18 +260,27 @@ pub struct SharedFolder {
 }
 
 /// Represents a VM power state.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum VmPowerState {
+    /// The VM is running.
     Running,
+    /// The VM is not running.
+    ///
+    /// This state contains `Stopped`, `Suspended` and `Paused`.
+    NotRunning,
+    /// The VM is stopped.
     Stopped,
+    /// The VM is suspended.
     Suspended,
+    /// The VM is paused.
     Paused,
+    /// The VM is in an unknown state.
+    ///
+    /// Due to the specifications of the tool you are using, it may not be able to detect the VM state accurately.
     Unknown,
 }
 
 impl VmPowerState {
     #[inline]
-    pub fn is_running(&self) -> bool {
-        *self == Self::Running
-    }
+    pub fn is_running(&self) -> bool { *self == Self::Running }
 }
