@@ -520,10 +520,7 @@ impl HyperVCmd {
         I::Item: AsRef<str> + AsRef<OsStr>,
     {
         unsafe {
-            self.checkpoint_vm_unescaped(
-                vms.into_iter().map(|x| escape_pwsh(x)),
-                name,
-            )
+            self.checkpoint_vm_unescaped(vms.into_iter().map(escape_pwsh), name)
         }
     }
 
@@ -605,7 +602,7 @@ impl HyperVCmd {
     {
         unsafe {
             self.remove_vm_snapshot_unescaped(
-                vms.into_iter().map(|x| escape_pwsh(x)),
+                vms.into_iter().map(escape_pwsh),
                 name,
             )
         }
