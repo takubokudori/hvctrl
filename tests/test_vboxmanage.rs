@@ -66,6 +66,13 @@ mod tests {
         cmd.list_snapshots().unwrap();
         cmd.show_vm_info().unwrap();
     }
+
+    #[test]
+    fn test_vm_cmd() {
+        let mut cmd = get_cmd();
+        test_cmd_util::test_vm(&mut cmd);
+    }
+
     #[test]
     fn test_power_cmd() {
         let cmd = get_cmd();

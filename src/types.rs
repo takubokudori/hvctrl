@@ -1,9 +1,14 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
+use crate::vmerr;
 use serde::{Deserialize, Serialize};
 use std::{process::Command, time::Duration};
+
+use std::string::FromUtf8Error;
+#[cfg(windows)]
 use windy::AString;
 
+#[cfg(windows)]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
     match cmd.output() {
@@ -13,11 +18,25 @@ pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
                 AString::new_unchecked(o.stderr).to_string_lossy(),
             ))
         },
-        Err(x) => Err(VmError::from(ErrorKind::ExecutionFailed(x.to_string()))),
+        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[cfg(not(windows))]
+/// Executes `cmd` and Returns `(stdout, stderr)`.
+pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
+    match cmd.output() {
+        Ok(o) => Ok((
+            String::from_utf8(o.stdout)
+                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
+            String::from_utf8(o.stderr)
+                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
+        )),
+        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct VmError {
     repr: Repr,
 }
@@ -45,13 +64,13 @@ impl VmError {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Repr {
     Simple(ErrorKind),
     Unknown(String),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ErrorKind {
     AuthenticationFailed,
     ExecutionFailed(String),
@@ -60,6 +79,7 @@ pub enum ErrorKind {
     InvalidParameter(String),
     /// InvalidPowerState contains the current VM power state.
     InvalidPowerState(VmPowerState),
+    FromUtf8Error(FromUtf8Error),
     NetworkAdaptorNotFound,
     NetworkNotFound,
     /// Requires any privileges to control a VM.
@@ -102,6 +122,25 @@ macro_rules! starts_err {
             return $crate::types::VmError::from($y);
         }
     };
+}
+
+/// A trait for a VM information.
+pub trait VmCmd {
+    /// Get a list of VMs.
+    fn list_vms(&self) -> VmResult<Vec<Vm>>;
+    /// Sets the VM specified by the `id` of the VM.
+    /// If the corresponding VM doesn't exist, return [`ErrorKind::VmNotFound`].
+    ///
+    /// The ID type depends on the tool you are using.
+    fn set_vm_by_id(&mut self, id: &str) -> VmResult<()>;
+    /// Sets the VM specified by the `name` of the VM.
+    /// If the corresponding VM doesn't exist, return [`ErrorKind::VmNotFound`].
+    fn set_vm_by_name(&mut self, name: &str) -> VmResult<()>;
+    /// Sets the VM specified by the `path` of the VM file.
+    /// If the corresponding VM doesn't exist, return [`ErrorKind::VmNotFound`].
+    ///
+    /// The file type depends on the tool you are using.
+    fn set_vm_by_path(&mut self, path: &str) -> VmResult<()>;
 }
 
 /// A trait for managing power state of a VM.

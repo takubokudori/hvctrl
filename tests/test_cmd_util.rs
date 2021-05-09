@@ -1,11 +1,24 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 #![allow(dead_code)]
-use hvctrl::{
-    types::{ErrorKind, PowerCmd, Snapshot, SnapshotCmd, VmResult},
-    vmerr,
-};
+use hvctrl::{types::*, vmerr};
 use std::time::Duration;
+
+pub fn test_vm(cmd: &mut impl VmCmd) {
+    cmd.list_vms().unwrap();
+    assert_eq!(
+        vmerr!(ErrorKind::VmNotFound),
+        cmd.set_vm_by_name("hvctrlDoesNotExistVmName")
+    );
+    assert_eq!(
+        vmerr!(ErrorKind::VmNotFound),
+        cmd.set_vm_by_path(r"C:\hvctrl\does\not\exist\vm.vmx")
+    );
+    assert_eq!(
+        vmerr!(ErrorKind::VmNotFound),
+        cmd.set_vm_by_id("0HVCTRL1DOES2NOT3EXIST4VM5ID4649")
+    );
+}
 
 fn is_invalid_state_running<T>(x: VmResult<T>) -> bool {
     match x {
@@ -73,7 +86,7 @@ pub fn test_power(cmd: &impl PowerCmd) {
     assert_eq!(Ok(false), cmd.is_running());
 }
 
-/// At first, make sure that the snapshot named `hvctrl_test_snapshot` does not exists.
+/// At first, make sure that the snapshot named `hvctrl_test_snapshot` does not exist.
 pub fn test_snapshot_cmd<T: SnapshotCmd>(cmd: &T) {
     const SN_NAME: &str = "hvctrl_test_snapshot";
     fn is_snapshot_exists(v: &[Snapshot], name: &str) -> bool {

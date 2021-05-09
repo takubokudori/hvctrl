@@ -13,9 +13,8 @@ mod test_cmd_util;
 #[cfg(test)]
 mod tests {
     use crate::test_cmd_util;
-    use hvctrl::hyperv::HyperVCmd;
+    use hvctrl::{hyperv::HyperVCmd, types::SnapshotCmd};
     use serde::Deserialize;
-    use hvctrl::types::SnapshotCmd;
 
     #[derive(Debug, Deserialize)]
     struct HyperVCmdConfig {
@@ -46,11 +45,18 @@ mod tests {
     }
 
     #[test]
-    fn test(){
-        let cmd=get_cmd();
-        cmd.list_vms().unwrap();
+    fn test() {
+        let cmd = get_cmd();
+        cmd.get_vm().unwrap();
         cmd.list_snapshots().unwrap();
     }
+
+    #[test]
+    fn test_vm_cmd() {
+        let mut cmd = get_cmd();
+        test_cmd_util::test_vm(&mut cmd);
+    }
+
     #[test]
     fn test_power_cmd() {
         let cmd = get_cmd();

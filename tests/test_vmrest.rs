@@ -18,7 +18,7 @@ mod test_cmd_util;
 #[cfg(test)]
 mod tests {
     use crate::test_cmd_util;
-    use hvctrl::vmware::VmRest;
+    use hvctrl::{types::VmCmd, vmware::VmRest};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -60,8 +60,7 @@ mod tests {
             .username(config.username.as_ref().map(|x| x.clone()))
             .password(config.password.as_ref().map(|x| x.clone()));
         if let Some(x) = &config.vm_path {
-            let id = cmd.get_vm_id_from_path(&x).expect("VM Not Found");
-            cmd.vm_id(id);
+            cmd.set_vm_by_path(&x).expect("VM Not Found");
         }
         cmd
     }
@@ -69,8 +68,14 @@ mod tests {
     #[test]
     fn test() {
         let cmd = get_cmd();
-        println!("version: {:?}",cmd.version().unwrap());
-        cmd.list_vms().unwrap();
+        println!("version: {:?}", cmd.version().unwrap());
+        cmd.get_vms().unwrap();
+    }
+
+    #[test]
+    fn test_vm_cmd() {
+        let mut cmd = get_cmd();
+        test_cmd_util::test_vm(&mut cmd);
     }
     #[test]
     fn test_power_cmd() {

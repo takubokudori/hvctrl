@@ -289,23 +289,20 @@ impl VmRest {
     }
 
     /// Gets the VM ID from the path.
-    pub fn get_vm_id_from_path(&self, path: &str) -> VmResult<String> {
-        let vms = self.list_vms()?;
+    pub fn get_vm_id_by_path(&self, path: &str) -> VmResult<String> {
+        let vms = self.get_vms()?;
         for vm in vms {
-            if let Some(p) = vm.path {
-                if p == path {
-                    return Ok(vm.id.unwrap());
-                }
+            if path == vm.path.as_deref().expect("Failed to get path") {
+                return Ok(vm.id.expect("Failed to get id"));
             }
         }
         vmerr!(ErrorKind::VmNotFound)
     }
 
     fn get_vm_id(&self) -> VmResult<&str> {
-        match &self.vm_id {
-            Some(x) => Ok(x),
-            None => vmerr!(ErrorKind::VmIsNotSpecified),
-        }
+        self.vm_id
+            .as_deref()
+            .ok_or_else(|| VmError::from(ErrorKind::VmIsNotSpecified))
     }
 
     pub fn version(&self) -> VmResult<String> {
@@ -325,7 +322,7 @@ impl VmRest {
         Ok(s[..m - 1].to_string())
     }
 
-    pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
+    pub fn get_vms(&self) -> VmResult<Vec<Vm>> {
         let cli = self.get_client()?;
         let v = cli.get(&format!("{}/api/vms", self.url));
         let s = self.execute(v)?;
@@ -594,6 +591,39 @@ impl VmRest {
         self.execute(v)?;
         Ok(())
     }
+
+    pub fn get_display_name(&self) -> VmResult<String> {
+        self.get_display_name_by_id(self.get_vm_id()?)
+    }
+
+    pub fn get_display_name_by_id(&self, id: &str) -> VmResult<String> {
+        for vm in self.get_vms()? {
+            if id == vm.id.as_deref().expect("Failed to get id") {
+                let path = vm.path.as_deref().unwrap();
+                return Self::get_display_name_from_vmx(path)
+                    .ok_or_else(|| VmError::from(ErrorKind::VmNotFound));
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
+    }
+
+    fn get_display_name_from_vmx(path: &str) -> Option<String> {
+        use std::io::{BufRead, BufReader};
+        // Return `None` if the vmx file cannot be opened.
+        if let Ok(f) = std::fs::File::open(path) {
+            for l in BufReader::new(f).lines().flatten() {
+                if let Some(dn) = l.strip_prefix("displayName = \"") {
+                    if dn.is_empty() {
+                        // broken?
+                        return None;
+                    }
+                    let dn = &dn[..dn.len() - 1];
+                    return Some(dn.to_string());
+                }
+            }
+        }
+        None
+    }
 }
 
 fn expected_power_state(
@@ -604,6 +634,40 @@ fn expected_power_state(
         Ok(x) if x == expected => Ok(()),
         Ok(x) => vmerr!(ErrorKind::InvalidPowerState(x)),
         Err(x) => Err(x),
+    }
+}
+
+impl VmCmd for VmRest {
+    fn list_vms(&self) -> VmResult<Vec<Vm>> { self.get_vms() }
+
+    fn set_vm_by_id(&mut self, id: &str) -> VmResult<()> {
+        for vm in self.get_vms()? {
+            if id == vm.id.as_deref().expect("Failed to get id") {
+                self.vm_id = vm.id;
+                return Ok(());
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
+    }
+
+    /// `name` is the name of a VM as displayed in the GUI, not the `.vmx` file name.
+    fn set_vm_by_name(&mut self, name: &str) -> VmResult<()> {
+        for vm in self.get_vms()? {
+            let path = vm.path.as_deref().unwrap();
+            // Ignore if the vmx file cannot be opened.
+            if let Some(display_name) = Self::get_display_name_from_vmx(path) {
+                if name == display_name {
+                    self.vm_id = vm.id;
+                    return Ok(());
+                }
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
+    }
+
+    fn set_vm_by_path(&mut self, path: &str) -> VmResult<()> {
+        self.vm_id = Some(self.get_vm_id_by_path(path)?);
+        Ok(())
     }
 }
 

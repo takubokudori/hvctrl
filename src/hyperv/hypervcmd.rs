@@ -7,9 +7,9 @@ use crate::{deserialize, types::*};
 use serde::Deserialize;
 use std::{ffi::OsStr, process::Command, time::Duration};
 
-/// Escapes a literal.
+/// Escapes an argument.
 ///
-/// surrounds a command with double quotes and escapes double quotes and back-quotes.
+/// Surrounds the argument with single quotes and escapes single quotes.
 pub fn escape_pwsh<S: AsRef<str>>(s: S) -> String {
     let s = s.as_ref();
     let mut ret = String::with_capacity(s.as_bytes().len() + 2);
@@ -149,12 +149,11 @@ impl HyperVCmd {
 
     pub fn get_vm_name(&self) -> Option<&str> { self.vm_name.as_deref() }
 
-    fn get_vm(&self) -> VmResult<&str> {
+    fn retrieve_vm(&self) -> VmResult<&str> {
         // self.vm_name is escaped on input.
-        match &self.vm_name {
-            Some(x) => Ok(x),
-            None => vmerr!(ErrorKind::VmIsNotSpecified),
-        }
+        self.vm_name
+            .as_deref()
+            .ok_or_else(|| VmError::from(ErrorKind::VmIsNotSpecified))
     }
 
     fn cmd(&self, cmdlet: &'static str) -> PsCommand {
@@ -183,7 +182,7 @@ impl HyperVCmd {
     pub fn get_power_state(&self) -> VmResult<VmPowerState> {
         let s = self
             .cmd("Get-VM")
-            .args(&[&self.get_vm()?, "|select State|ConvertTo-Json"])
+            .args(&[&self.retrieve_vm()?, "|select State|ConvertTo-Json"])
             .exec()?;
         #[derive(Deserialize)]
         struct Response {
@@ -210,10 +209,10 @@ impl HyperVCmd {
     }
 
     /// Gets a list of VMs.
-    pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
+    pub fn get_vm(&self) -> VmResult<Vec<Vm>> {
         let s = self
             .cmd("Get-VM")
-            .arg("|select VMId, Name, Path|ConvertTo-Json")
+            .arg("|select VMId, Name|ConvertTo-Json")
             .exec()?;
         #[derive(Deserialize)]
         struct Response {
@@ -221,8 +220,6 @@ impl HyperVCmd {
             id: String,
             #[serde(alias = "Name")]
             name: String,
-            #[serde(alias = "Path")]
-            path: String,
         }
         if s.is_empty() {
             // No snapshot.
@@ -234,7 +231,7 @@ impl HyperVCmd {
             .map(|x| Vm {
                 id: Some(x.id.clone()),
                 name: Some(x.name.clone()),
-                path: Some(x.path.clone()),
+                path: None,
             })
             .collect())
     }
@@ -485,7 +482,10 @@ impl HyperVCmd {
     pub fn get_vm_snapshot(&self) -> VmResult<Vec<Snapshot>> {
         let s = self
             .cmd("Get-VMSnapshot")
-            .args(&[self.get_vm()?, "|select Id, Name, Notes|ConvertTo-Json"])
+            .args(&[
+                self.retrieve_vm()?,
+                "|select Id, Name, Notes|ConvertTo-Json",
+            ])
             .exec()?;
         #[derive(Deserialize)]
         struct Response {
@@ -636,25 +636,54 @@ impl HyperVCmd {
     }
 }
 
+impl VmCmd for HyperVCmd {
+    fn list_vms(&self) -> VmResult<Vec<Vm>> { self.get_vm() }
+
+    /// `id` is VMId which can be obtained with `Get-VM|select VMId`.
+    fn set_vm_by_id(&mut self, id: &str) -> VmResult<()> {
+        for vm in self.list_vms()? {
+            if id == vm.id.as_deref().expect("VMId does not exist") {
+                self.vm_name = vm.name;
+                return Ok(());
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
+    }
+
+    fn set_vm_by_name(&mut self, name: &str) -> VmResult<()> {
+        for vm in self.list_vms()? {
+            if name == vm.name.as_deref().expect("Name does not exist") {
+                self.vm_name = vm.name;
+                return Ok(());
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
+    }
+
+    /// Due to the specification of Hyper-V, HyperVCmd does not support this function.
+    fn set_vm_by_path(&mut self, _path: &str) -> VmResult<()> {
+        vmerr!(ErrorKind::UnsupportedCommand)
+    }
+}
 impl PowerCmd for HyperVCmd {
     fn start(&self) -> VmResult<()> {
         // SAFETY: self.vm_name is escaped on input.
-        unsafe { self.start_vm_unescaped(&[self.get_vm()?]) }
+        unsafe { self.start_vm_unescaped(&[self.retrieve_vm()?]) }
     }
 
     fn stop<D: Into<Option<Duration>>>(&self, _timeout: D) -> VmResult<()> {
-        unsafe { self.stop_vm_unescaped(&[self.get_vm()?], false, false) }
+        unsafe { self.stop_vm_unescaped(&[self.retrieve_vm()?], false, false) }
     }
 
     fn hard_stop(&self) -> VmResult<()> {
-        unsafe { self.stop_vm_unescaped(&[self.get_vm()?], true, false) }
+        unsafe { self.stop_vm_unescaped(&[self.retrieve_vm()?], true, false) }
     }
 
     fn suspend(&self) -> VmResult<()> {
-        unsafe { self.suspend_vm_unescaped(&[self.get_vm()?]) }
+        unsafe { self.suspend_vm_unescaped(&[self.retrieve_vm()?]) }
     }
     fn resume(&self) -> VmResult<()> {
-        unsafe { self.resume_vm_unescaped(&[self.get_vm()?]) }
+        unsafe { self.resume_vm_unescaped(&[self.retrieve_vm()?]) }
     }
 
     fn is_running(&self) -> VmResult<bool> {
@@ -695,11 +724,11 @@ impl SnapshotCmd for HyperVCmd {
     }
 
     fn take_snapshot(&self, name: &str) -> VmResult<()> {
-        unsafe { self.checkpoint_vm_unescaped(&[self.get_vm()?], name) }
+        unsafe { self.checkpoint_vm_unescaped(&[self.retrieve_vm()?], name) }
     }
 
     fn revert_snapshot(&self, name: &str) -> VmResult<()> {
-        unsafe { self.restore_vm_snapshot_unescaped(self.get_vm()?, name) }
+        unsafe { self.restore_vm_snapshot_unescaped(self.retrieve_vm()?, name) }
     }
 
     fn delete_snapshot(&self, name: &str) -> VmResult<()> {
@@ -709,7 +738,9 @@ impl SnapshotCmd for HyperVCmd {
             // The snapshot named `name` doesn't exist.
             return vmerr!(ErrorKind::SnapshotNotFound);
         }
-        unsafe { self.remove_vm_snapshot_unescaped(&[self.get_vm()?], name) }
+        unsafe {
+            self.remove_vm_snapshot_unescaped(&[self.retrieve_vm()?], name)
+        }
     }
 }
 
@@ -725,7 +756,7 @@ impl GuestCmd for HyperVCmd {
     ) -> VmResult<()> {
         unsafe {
             self.copy_vm_file_unescaped(
-                &[self.get_vm()?],
+                &[self.retrieve_vm()?],
                 from_guest_path,
                 to_host_path,
                 true,
@@ -741,7 +772,7 @@ impl GuestCmd for HyperVCmd {
     ) -> VmResult<()> {
         unsafe {
             self.copy_vm_file_unescaped(
-                &[self.get_vm()?],
+                &[self.retrieve_vm()?],
                 from_host_path,
                 to_guest_path,
                 true,

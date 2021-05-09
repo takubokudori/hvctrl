@@ -249,17 +249,17 @@ impl VBoxManage {
     }
 
     pub fn show_vm_info(&self) -> VmResult<String> {
-        self.exec(self.cmd().args(&[
-            "showvminfo",
-            &self.get_vm()?,
-            "--machinereadable",
-        ]))
+        self.show_vm_info2(&self.get_vm()?)
     }
+
+    fn show_vm_info2(&self, id: &str) -> VmResult<String> {
+        self.exec(self.cmd().args(&["showvminfo", id, "--machinereadable"]))
+    }
+
     fn get_vm(&self) -> VmResult<&str> {
-        match &self.vm_name {
-            Some(x) => Ok(x),
-            None => vmerr!(ErrorKind::VmIsNotSpecified),
-        }
+        self.vm_name
+            .as_deref()
+            .ok_or_else(|| VmError::from(ErrorKind::VmIsNotSpecified))
     }
 
     pub fn start_vm(&self) -> VmResult<()> {
@@ -543,6 +543,48 @@ impl VBoxManage {
         cmd.args(self.build_auth());
         cmd.args(v);
         self.exec2(&mut cmd)
+    }
+}
+
+impl VmCmd for VBoxManage {
+    fn list_vms(&self) -> VmResult<Vec<Vm>> { self.list_vms() }
+
+    fn set_vm_by_id(&mut self, id: &str) -> VmResult<()> {
+        // VBoxManage can be passed an ID.
+        self.set_vm_by_name(id)
+    }
+
+    fn set_vm_by_name(&mut self, name: &str) -> VmResult<()> {
+        self.show_vm_info2(name)?; // Checks if the corresponding VM exists.
+        self.vm_name = Some(name.to_string());
+        Ok(())
+    }
+
+    /// `path` is the absolute path of a `vbox` file.
+    fn set_vm_by_path(&mut self, path: &str) -> VmResult<()> {
+        use ErrorKind::UnexpectedResponse;
+        // `\` in CfgFile of show_vm_info is escaped, So `path` also needs to be escaped.
+        let path = path.replace('\\', "\\\\");
+        let vms = self.list_vms()?;
+        // VBoxManage's machine readable format collapses if the snapshot detail contains `"` or `\`.
+        // To avoid this, call show_vm_info multiple times (it takes time).
+        for vm in vms {
+            let id = vm.id.as_ref().unwrap();
+            let s = self.show_vm_info2(id)?;
+            let s2 = s.clone();
+            let cfg_path = s
+                .lines()
+                .nth(4)
+                .ok_or_else(|| VmError::from(UnexpectedResponse(s2.clone())))?
+                .strip_prefix("CfgFile=\"")
+                .ok_or_else(|| VmError::from(UnexpectedResponse(s2.clone())))?;
+            let cfg_path = &cfg_path[..cfg_path.len() - 1];
+            if path == cfg_path {
+                self.vm_name = Some(id.to_string());
+                return Ok(());
+            }
+        }
+        vmerr!(ErrorKind::VmNotFound)
     }
 }
 
