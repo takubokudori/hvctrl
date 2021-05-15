@@ -16,13 +16,13 @@
 mod test_cmd_util;
 
 #[cfg(test)]
-mod tests {
+mod test_vmrest {
     use crate::test_cmd_util;
     use hvctrl::{types::VmCmd, vmware::VmRest};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
-    struct VMRestConfig {
+    struct VmRestConfig {
         executable_path: Option<String>,
         vm_path: Option<String>,
         url: Option<String>,
@@ -34,7 +34,7 @@ mod tests {
 
     #[derive(Debug, Deserialize)]
     struct ConfigToml {
-        vmrest: Option<VMRestConfig>,
+        vmrest: Option<VmRestConfig>,
     }
 
     fn get_cmd() -> VmRest {

@@ -11,7 +11,7 @@
 
 mod test_cmd_util;
 #[cfg(test)]
-mod tests {
+mod test_hypervcmd {
     use crate::test_cmd_util;
     use hvctrl::{hyperv::HyperVCmd, types::SnapshotCmd};
     use serde::Deserialize;

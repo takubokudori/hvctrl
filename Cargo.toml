@@ -19,20 +19,22 @@ exclude = [
 all-features = true
 
 [dependencies]
-regex = "1.4"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+encoding_rs = "0.8.28"
+regex = "1.5"
+reqwest = { version = "0.11", features = ["blocking", "json"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-windy = "0.1.4"
+windy = { version = "0.1.4", optional = true }
 
 [dev-dependencies]
 toml = "0.5"
 
 [features]
-hyperv = []
+hyperv = ["windy"]
 virtualbox = []
 vmware = []
 
 hypervcmd = []
 vboxmanage = []
-vmrest = []
+vmrest = ["reqwest"]
+vmrun = []

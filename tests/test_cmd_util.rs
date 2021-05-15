@@ -6,18 +6,24 @@ use std::time::Duration;
 
 pub fn test_vm(cmd: &mut impl VmCmd) {
     cmd.list_vms().unwrap();
-    assert_eq!(
-        vmerr!(ErrorKind::VmNotFound),
-        cmd.set_vm_by_name("hvctrlDoesNotExistVmName")
-    );
-    assert_eq!(
-        vmerr!(ErrorKind::VmNotFound),
-        cmd.set_vm_by_path(r"C:\hvctrl\does\not\exist\vm.vmx")
-    );
-    assert_eq!(
-        vmerr!(ErrorKind::VmNotFound),
-        cmd.set_vm_by_id("0HVCTRL1DOES2NOT3EXIST4VM5ID4649")
-    );
+    let x = cmd.set_vm_by_name("hvctrlDoesNotExistVmName");
+    if x != vmerr!(ErrorKind::VmNotFound)
+        && x != vmerr!(ErrorKind::UnsupportedCommand)
+    {
+        panic!("Unexpected response: {:?}", x);
+    }
+    let x = cmd.set_vm_by_path(r"C:\hvctrl\does\not\exist\vm.vmx");
+    if x != vmerr!(ErrorKind::VmNotFound)
+        && x != vmerr!(ErrorKind::UnsupportedCommand)
+    {
+        panic!("Unexpected response: {:?}", x);
+    }
+    let x = cmd.set_vm_by_id("0HVCTRL1DOES2NOT3EXIST4VM5ID4649");
+    if x != vmerr!(ErrorKind::VmNotFound)
+        && x != vmerr!(ErrorKind::UnsupportedCommand)
+    {
+        panic!("Unexpected response: {:?}", x);
+    }
 }
 
 fn is_invalid_state_running<T>(x: VmResult<T>) -> bool {

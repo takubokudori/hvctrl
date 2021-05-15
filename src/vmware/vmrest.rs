@@ -46,30 +46,21 @@ struct NicDevice {
     mac_address: String,
 }
 
-impl From<&str> for NicType {
-    fn from(s: &str) -> Self {
-        match s {
+impl<T: AsRef<str>> From<T> for NicType {
+    fn from(s: T) -> Self {
+        match s.as_ref() {
             "bridged" => Self::Bridge,
             "nat" => Self::NAT,
             "hostOnly" => Self::HostOnly,
             "custom" => Self::Custom("".to_string()),
-            _ => panic!("Unknown type: {}", s),
+            _ => panic!("Unknown type: {}", s.as_ref()),
         }
     }
 }
 
-impl From<String> for NicType {
-    #[inline]
-    fn from(s: String) -> Self { Self::from(&s) }
-}
-impl From<&String> for NicType {
-    #[inline]
-    fn from(s: &String) -> Self { Self::from(s.as_str()) }
-}
-
 #[derive(Clone, Debug)]
 pub struct VmRest {
-    vmrest_path: String,
+    executable_path: String,
     url: String,
     vm_id: Option<String>,
     proxy: Option<String>,
@@ -85,7 +76,7 @@ impl Default for VmRest {
 impl VmRest {
     pub fn new() -> Self {
         Self {
-            vmrest_path: "vmrest".to_string(),
+            executable_path: "vmrest".to_string(),
             url: "http://127.0.0.1:8697".to_string(),
             encoding: "utf-8".to_string(),
             vm_id: None,
@@ -95,13 +86,7 @@ impl VmRest {
         }
     }
 
-    pub fn vmrest_path<T: Into<String>>(
-        &mut self,
-        vmrest_path: T,
-    ) -> &mut Self {
-        self.vmrest_path = vmrest_path.into();
-        self
-    }
+    impl_setter!(executable_path: String);
 
     pub fn url<T: Into<String>>(&mut self, url: T) -> &mut Self {
         self.url = url.into();
@@ -112,66 +97,31 @@ impl VmRest {
         self
     }
 
-    pub fn vm_id<T: Into<Option<String>>>(&mut self, vm_id: T) -> &mut Self {
-        self.vm_id = vm_id.into();
-        self
-    }
-
-    pub fn username<T: Into<Option<String>>>(
-        &mut self,
-        username: T,
-    ) -> &mut Self {
-        self.username = username.into();
-        self
-    }
-
-    pub fn password<T: Into<Option<String>>>(
-        &mut self,
-        password: T,
-    ) -> &mut Self {
-        self.password = password.into();
-        self
-    }
-
-    pub fn proxy<T: Into<Option<String>>>(&mut self, proxy: T) -> &mut Self {
-        self.proxy = proxy.into();
-        self
-    }
-
-    pub fn encoding<T: Into<String>>(&mut self, encoding: T) -> &mut Self {
-        self.encoding = encoding.into();
-        self
-    }
+    impl_setter!(@opt vm_id: String);
+    impl_setter!(@opt username: String);
+    impl_setter!(@opt password: String);
+    impl_setter!(@opt proxy: String);
+    impl_setter!(encoding: String);
 
     /// Starts vmrest server.
-    pub fn start_vmrest_server(&mut self) -> VmResult<()> {
-        match Command::new(&self.vmrest_path).output() {
-            Ok(x) => {
-                let stdout = match String::from_utf8(x.stdout) {
-                    Ok(s) => s,
-                    Err(x) => {
-                        return vmerr!(Repr::Unknown(format!(
-                            "Failed to convert stdout: {}",
-                            x.to_string()
-                        )));
-                    }
-                };
-                for d in stdout.lines() {
-                    const SHO: &str = "Serving HTTP on ";
-                    if let Some(d) = d.strip_prefix(SHO) {
-                        self.url = d.to_string();
-                        return Ok(());
-                    }
-                }
-                vmerr!(Repr::Unknown("Failed to start a server".to_string()))
-            }
-            Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
+    pub fn start_vmrest_server(&mut self, port: Option<u16>) -> VmResult<()> {
+        let mut cmd = Command::new(&self.executable_path);
+        if let Some(port) = port {
+            cmd.args(&["-p", &port.to_string()]);
         }
+        let (stdout, _) = exec_cmd(&mut cmd)?;
+        for d in stdout.lines() {
+            if let Some(url) = d.strip_prefix("Serving HTTP on ") {
+                self.url = format!("http://{}", url);
+                return Ok(());
+            }
+        }
+        vmerr!(Repr::Unknown("Failed to start a server".to_string()))
     }
 
     /// Creates a vmrest API server account using `vmrest -C`.
     pub fn setup_user(&self, username: &str, password: &str) -> VmResult<()> {
-        match Command::new(&self.vmrest_path).arg("-C").spawn() {
+        match Command::new(&self.executable_path).arg("-C").spawn() {
             Ok(mut x) => {
                 let stdin = x.stdin.as_mut().unwrap();
                 stdin
@@ -624,6 +574,14 @@ impl VmRest {
         }
         None
     }
+
+    fn is_running_result(&self) -> VmResult<()> {
+        if !self.get_power_state()?.is_running() {
+            vmerr!(ErrorKind::InvalidPowerState(VmPowerState::NotRunning))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn expected_power_state(
@@ -685,33 +643,26 @@ impl PowerCmd for VmRest {
     fn stop<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()> {
         let timeout = timeout.into();
         let s = Instant::now();
-        if !self.get_power_state()?.is_running() {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::NotRunning
-            ));
-        }
+        self.is_running_result()?;
         loop {
-            if let Some(timeout) = timeout {
-                if s.elapsed() >= timeout {
-                    return vmerr!(ErrorKind::Timeout);
-                }
-            }
             match self.set_power_state(&VmRestPowerCommand::Shutdown) {
                 Ok(VmPowerState::Stopped) => return Ok(()),
                 Ok(VmPowerState::Running) => { /* Does nothing */ }
                 Ok(x) => return vmerr!(ErrorKind::InvalidPowerState(x)),
                 Err(x) => return Err(x),
             }
+
+            if let Some(timeout) = timeout {
+                if s.elapsed() >= timeout {
+                    return vmerr!(ErrorKind::Timeout);
+                }
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
     }
 
     fn hard_stop(&self) -> VmResult<()> {
-        if !self.get_power_state()?.is_running() {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::NotRunning
-            ));
-        }
+        self.is_running_result()?;
         expected_power_state(
             self.set_power_state(&VmRestPowerCommand::Off),
             VmPowerState::Stopped,
@@ -719,11 +670,7 @@ impl PowerCmd for VmRest {
     }
 
     fn suspend(&self) -> VmResult<()> {
-        if !self.get_power_state()?.is_running() {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::NotRunning
-            ));
-        }
+        self.is_running_result()?;
         expected_power_state(
             self.set_power_state(&VmRestPowerCommand::Suspend),
             VmPowerState::Suspended,
@@ -737,21 +684,13 @@ impl PowerCmd for VmRest {
     }
 
     fn reboot<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()> {
-        if !self.get_power_state()?.is_running() {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::NotRunning
-            ));
-        }
+        self.is_running_result()?;
         self.stop(timeout)?;
         self.start()
     }
 
     fn hard_reboot(&self) -> VmResult<()> {
-        if !self.get_power_state()?.is_running() {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::NotRunning
-            ));
-        }
+        self.is_running_result()?;
         let _ = self.hard_stop();
         self.start()
     }

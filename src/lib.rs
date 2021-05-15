@@ -28,9 +28,8 @@ pub mod vmware;
 use crate::types::{ErrorKind, VmResult};
 use serde::Deserialize;
 
+#[allow(dead_code)]
 pub(crate) fn deserialize<'a, T: Deserialize<'a>>(s: &'a str) -> VmResult<T> {
-    match serde_json::from_str(s) {
-        Ok(x) => Ok(x),
-        Err(x) => vmerr!(ErrorKind::UnexpectedResponse(x.to_string())),
-    }
+    serde_json::from_str(s)
+        .map_err(|x| vmerr!(@r ErrorKind::UnexpectedResponse(x.to_string())))
 }

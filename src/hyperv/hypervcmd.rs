@@ -77,7 +77,7 @@ impl PsCommand {
     }
 
     fn exec(&mut self) -> VmResult<String> {
-        let (stdout, stderr) = exec_cmd(&mut self.cmd)?;
+        let (stdout, stderr) = exec_cmd_astr(&mut self.cmd)?;
         if !stderr.is_empty() {
             Self::check(stderr, self.cmdlet_name)
         } else {
@@ -131,11 +131,10 @@ impl PsCommand {
 impl HyperVCmd {
     pub fn new() -> Self { Self::default() }
 
-    /// Sets the path to HyperVCmd.
-    pub fn executable_path<T: Into<String>>(&mut self, path: T) -> &mut Self {
-        self.executable_path = path.into().trim().to_string();
-        self
-    }
+    impl_setter!(
+        /// Sets the path to PowerShell.
+        executable_path: String
+    );
 
     pub fn get_executable_path(&self) -> &str { &self.executable_path }
 

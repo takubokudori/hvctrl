@@ -44,11 +44,10 @@ impl VBoxManage {
         }
     }
 
-    /// Sets the path to VBoxManage.
-    pub fn executable_path<T: Into<String>>(&mut self, path: T) -> &mut Self {
-        self.executable_path = path.into().trim().to_string();
-        self
-    }
+    impl_setter!(
+        /// Sets the path to VBoxManage.
+        executable_path: String
+    );
 
     pub fn get_executable_path(&self) -> &str { &self.executable_path }
 
@@ -63,53 +62,37 @@ impl VBoxManage {
 
     pub fn get_vm_name(&self) -> Option<&str> { self.vm_name.as_deref() }
 
+    impl_setter!(@opt
     /// Sets the guest username for login.
-    pub fn guest_username<T: Into<Option<String>>>(
-        &mut self,
-        guest_username: T,
-    ) -> &mut Self {
-        self.guest_username = guest_username.into();
-        self
-    }
+        guest_username: String
+    );
 
     pub fn get_guest_username(&self) -> Option<&str> {
         self.guest_username.as_deref()
     }
 
+    impl_setter!(@opt
     /// Sets the guest password for login.
-    pub fn guest_password<T: Into<Option<String>>>(
-        &mut self,
-        guest_password: T,
-    ) -> &mut Self {
-        self.guest_password = guest_password.into();
-        self
-    }
+        guest_password: String
+    );
 
     pub fn get_guest_password(&self) -> Option<&str> {
         self.guest_password.as_deref()
     }
 
-    /// Sets the **absolute** path guest password for login.
-    pub fn guest_password_file<T: Into<Option<String>>>(
-        &mut self,
-        guest_password_file: T,
-    ) -> &mut Self {
-        self.guest_password_file = guest_password_file.into();
-        self
-    }
+    impl_setter!(@opt
+    /// Sets the absolute path to the guest password file for login.
+        guest_password_file: String
+    );
 
     pub fn get_guest_password_file(&self) -> Option<&str> {
         self.guest_password_file.as_deref()
     }
 
+    impl_setter!(@opt
     /// Sets the guest domain for Windows guests.
-    pub fn guest_domain<T: Into<Option<String>>>(
-        &mut self,
-        guest_domain: T,
-    ) -> &mut Self {
-        self.guest_domain = guest_domain.into();
-        self
-    }
+        guest_domain: String
+    );
 
     pub fn get_guest_domain(&self) -> Option<&str> {
         self.guest_domain.as_deref()
@@ -209,7 +192,7 @@ impl VBoxManage {
         }
     }
 
-    fn exec(&self, cmd: &mut Command) -> VmResult<String> {
+    fn exec(cmd: &mut Command) -> VmResult<String> {
         let (stdout, stderr) = exec_cmd(cmd)?;
         if !stderr.is_empty() {
             Self::check(stderr)
@@ -219,22 +202,16 @@ impl VBoxManage {
     }
 
     #[inline]
-    fn exec2(&self, cmd: &mut Command) -> VmResult<()> {
-        self.exec(cmd)?;
-        Ok(())
-    }
-
-    #[inline]
     fn cmd(&self) -> Command { Command::new(&self.executable_path) }
 
     /// Gets the VBoxManage version.
     pub fn version(&self) -> VmResult<String> {
-        Ok(self.exec(self.cmd().arg("-v"))?.trim().to_string())
+        Ok(Self::exec(self.cmd().arg("-v"))?.trim().to_string())
     }
 
     /// Gets a list of VMs.
     pub fn list_vms(&self) -> VmResult<Vec<Vm>> {
-        let s = self.exec(self.cmd().args(&["list", "vms"]))?;
+        let s = Self::exec(self.cmd().args(&["list", "vms"]))?;
         // "vm name" {uuid}
         Ok(s.lines()
             .map(|x| {
@@ -253,7 +230,7 @@ impl VBoxManage {
     }
 
     fn show_vm_info2(&self, id: &str) -> VmResult<String> {
-        self.exec(self.cmd().args(&["showvminfo", id, "--machinereadable"]))
+        Self::exec(self.cmd().args(&["showvminfo", id, "--machinereadable"]))
     }
 
     fn get_vm(&self) -> VmResult<&str> {
@@ -263,42 +240,53 @@ impl VBoxManage {
     }
 
     pub fn start_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&["startvm", self.get_vm()?]))
+        Self::exec(self.cmd().args(&["startvm", self.get_vm()?]))?;
+        Ok(())
     }
 
     pub fn poweroff_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&["controlvm", &self.get_vm()?, "poweroff"]))
+        Self::exec(self.cmd().args(&[
+            "controlvm",
+            &self.get_vm()?,
+            "poweroff",
+        ]))?;
+        Ok(())
     }
 
     /// Sends ACPI shutdown signal.
     ///
     /// If the VM is running, this function returns Ok(()) regardless of whether the VM was shut down.
     pub fn acpi_power_button_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&[
+        Self::exec(self.cmd().args(&[
             "controlvm",
             &self.get_vm()?,
             "acpipowerbutton",
-        ]))
+        ]))?;
+        Ok(())
     }
 
     pub fn reset_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&["controlvm", &self.get_vm()?, "reset"]))
+        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "reset"]))?;
+        Ok(())
     }
 
     pub fn pause_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&["controlvm", &self.get_vm()?, "pause"]))
+        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "pause"]))?;
+        Ok(())
     }
 
     pub fn resume_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&["controlvm", &self.get_vm()?, "resume"]))
+        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "resume"]))?;
+        Ok(())
     }
 
     pub fn save_state_vm(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&[
+        Self::exec(self.cmd().args(&[
             "controlvm",
             &self.get_vm()?,
             "savestate",
-        ]))
+        ]))?;
+        Ok(())
     }
 
     /// Gets a list of snapshots.
@@ -314,7 +302,7 @@ impl VBoxManage {
             Desc,
             DescCont,
         }
-        let s = self.exec(self.cmd().args(&[
+        let s = Self::exec(self.cmd().args(&[
             "snapshot",
             &self.get_vm()?,
             "list",
@@ -452,33 +440,37 @@ impl VBoxManage {
         if is_live {
             cmd.arg("--live");
         }
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 
     pub fn delete_snapshot(&self, name: &str) -> VmResult<()> {
-        self.exec2(self.cmd().args(&[
+        Self::exec(self.cmd().args(&[
             "snapshot",
             &self.get_vm()?,
             "delete",
             name,
-        ]))
+        ]))?;
+        Ok(())
     }
 
     pub fn restore_snapshot(&self, name: &str) -> VmResult<()> {
-        self.exec2(self.cmd().args(&[
+        Self::exec(self.cmd().args(&[
             "snapshot",
             &self.get_vm()?,
             "restore",
             name,
-        ]))
+        ]))?;
+        Ok(())
     }
 
     pub fn restore_current_snapshot(&self) -> VmResult<()> {
-        self.exec2(self.cmd().args(&[
+        Self::exec(self.cmd().args(&[
             "snapshot",
             &self.get_vm()?,
             "restorecurrent",
-        ]))
+        ]))?;
+        Ok(())
     }
 
     pub fn run(&self, guest_args: &[&str]) -> VmResult<()> {
@@ -486,7 +478,8 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.get_vm()?, "run"]);
         cmd.args(self.build_auth());
         cmd.args(guest_args);
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 
     /// Copies a file from guest to host.
@@ -499,7 +492,8 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.get_vm()?, "copyfrom"]);
         cmd.args(self.build_auth());
         cmd.args(&[from_guest_path, to_host_path]);
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 
     /// Copies a file from host to guest.
@@ -512,7 +506,8 @@ impl VBoxManage {
         cmd.args(&["guestcontrol", &self.get_vm()?, "copyto"]);
         cmd.args(self.build_auth());
         cmd.args(&[from_host_path, to_guest_path]);
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 
     /// Sends keyboard scancodes to the guest.
@@ -534,7 +529,8 @@ impl VBoxManage {
                 })
                 .collect::<Vec<String>>(),
         );
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 
     pub fn keyboard_put_string(&self, v: &[&str]) -> VmResult<()> {
@@ -542,7 +538,8 @@ impl VBoxManage {
         cmd.args(&["controlvm", &self.get_vm()?, "keyboardputstring"]);
         cmd.args(self.build_auth());
         cmd.args(v);
-        self.exec2(&mut cmd)
+        Self::exec(&mut cmd)?;
+        Ok(())
     }
 }
 
@@ -597,12 +594,6 @@ impl PowerCmd for VBoxManage {
         let s = Instant::now();
         let mut ok_flag = false;
         loop {
-            if let Some(timeout) = timeout {
-                if s.elapsed() >= timeout {
-                    return vmerr!(ErrorKind::Timeout);
-                }
-            }
-
             match self.acpi_power_button_vm() {
                 Ok(()) => {
                     ok_flag = true;
@@ -616,6 +607,12 @@ impl PowerCmd for VBoxManage {
                     } else {
                         return Err(x);
                     }
+                }
+            }
+
+            if let Some(timeout) = timeout {
+                if s.elapsed() >= timeout {
+                    return vmerr!(ErrorKind::Timeout);
                 }
             }
             std::thread::sleep(Duration::from_millis(200));

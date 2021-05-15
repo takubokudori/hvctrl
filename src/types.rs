@@ -1,16 +1,18 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
+#![allow(dead_code)]
+#![allow(unused_macros)]
 use crate::vmerr;
 use serde::{Deserialize, Serialize};
 use std::{process::Command, time::Duration};
 
 use std::string::FromUtf8Error;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windy"))]
 use windy::AString;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windy"))]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
-pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
+pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
     match cmd.output() {
         Ok(o) => unsafe {
             Ok((
@@ -22,7 +24,6 @@ pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
     }
 }
 
-#[cfg(not(windows))]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
     match cmd.output() {
@@ -68,6 +69,8 @@ impl VmError {
 pub enum Repr {
     Simple(ErrorKind),
     Unknown(String),
+    SerializeError,
+    IoError,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -87,6 +90,7 @@ pub enum ErrorKind {
     /// The guest service (e.g., [VirtualBox Guest Additions](https://www.virtualbox.org/manual/ch04.html#guestadd-intro), [VMware Tools](https://docs.vmware.com/en/VMware-Tools/index.html), [Hyper-V Integration Service](https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/reference/integration-services), etc...) that controls a VM is not running, ready or installed.
     ServiceIsNotRunning,
     SnapshotNotFound,
+    SnapshotExists,
     /// The specified action was not completed in time.
     Timeout,
     UnexpectedResponse(String),
@@ -97,6 +101,14 @@ pub enum ErrorKind {
 
 impl From<Repr> for VmError {
     fn from(repr: Repr) -> Self { Self { repr } }
+}
+
+impl From<std::io::Error> for VmError {
+    fn from(_: std::io::Error) -> Self { vmerr!(@r Repr::IoError) }
+}
+
+impl From<serde_json::Error> for VmError {
+    fn from(_: serde_json::Error) -> Self { vmerr!(@r Repr::SerializeError) }
 }
 
 impl From<ErrorKind> for VmError {
@@ -113,6 +125,9 @@ pub type VmResult<T> = Result<T, VmError>;
 macro_rules! vmerr {
     ($x:expr) => {
         Err($crate::types::VmError::from($x))
+    };
+    (@r $x:expr) => {
+        $crate::types::VmError::from($x)
     };
 }
 
@@ -322,4 +337,21 @@ pub enum VmPowerState {
 impl VmPowerState {
     #[inline]
     pub fn is_running(&self) -> bool { *self == Self::Running }
+}
+
+macro_rules! impl_setter {
+    ($(#[$inner:meta])* $name:ident : $t:ty) => {
+        $(#[$inner])*
+        pub fn $name<T: Into<$t>>(&mut self, $name: T) -> &mut Self {
+            self.$name = $name.into();
+            self
+        }
+    };
+    (@opt $(#[$inner:meta])* $name:ident : $t:ty) => {
+        $(#[$inner])*
+        pub fn $name<T: Into<Option<$t>>>(&mut self, $name: T) -> &mut Self {
+            self.$name = $name.into();
+            self
+        }
+    };
 }
