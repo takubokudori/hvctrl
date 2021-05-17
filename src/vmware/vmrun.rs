@@ -126,6 +126,11 @@ impl VmRun {
             "Invalid user name or password for the guest OS",
             AuthenticationFailed
         );
+        starts_err!(
+            s,
+            "The VMware Tools are not running in the virtual machine: ",
+            ServiceIsNotRunning
+        );
         starts_err!(s, "Unrecognized command: ", UnsupportedCommand);
         VmError::from(Repr::Unknown(format!("Unknown error: {}", s)))
     }
@@ -329,9 +334,67 @@ impl VmRun {
         Ok(())
     }
 
-    pub fn install_tools(&self) -> VmResult<()> {
-        Self::exec(self.cmd().args(&["installTools", self.get_vm()?]))?;
+    pub fn file_exists_in_guest(&self, guest_path: &str) -> VmResult<bool> {
+        let s = Self::exec(self.cmd().args(&[
+            "fileExistsInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
+        match s.as_str().trim() {
+            "The file exists." => Ok(true),
+            "The file does not exist." => Ok(false),
+            _ => vmerr!(ErrorKind::UnexpectedResponse(s)),
+        }
+    }
+
+    pub fn directory_exists_in_guest(
+        &self,
+        guest_path: &str,
+    ) -> VmResult<bool> {
+        let s = Self::exec(self.cmd().args(&[
+            "directoryExistsInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
+        match s.as_str().trim() {
+            "The directory exists." => Ok(true),
+            "The directory does not exist." => Ok(false),
+            _ => vmerr!(ErrorKind::UnexpectedResponse(s)),
+        }
+    }
+
+    pub fn create_directory_in_guest(&self, guest_path: &str) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "createDirectoryInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
         Ok(())
+    }
+
+    pub fn delete_directory_in_guest(&self, guest_path: &str) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "deleteDirectoryInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
+        Ok(())
+    }
+
+    /// Creates a temp file in guest.
+    ///
+    /// Returns the path to the temp file.
+    pub fn create_temp_file_in_guest(&self) -> VmResult<String> {
+        let s = Self::exec(
+            self.cmd().args(&["createTempFileInGuest", self.get_vm()?]),
+        )?;
+        Ok(s)
+    }
+
+    pub fn list_directory_in_guest(&self) -> VmResult<Vec<String>> {
+        let s =
+            Self::exec(self.cmd().args(&["checkToolsState", self.get_vm()?]))?;
+        Ok(s.lines().skip(1).map(|x| x.to_string()).collect())
     }
 
     pub fn copy_file_from_host_to_guest(
@@ -360,6 +423,64 @@ impl VmRun {
             host_path,
         ]))?;
         Ok(())
+    }
+
+    pub fn rename_file_in_guest(
+        &self,
+        old_path: &str,
+        new_path: &str,
+    ) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "renameFileInGuest",
+            self.get_vm()?,
+            old_path,
+            new_path,
+        ]))?;
+        Ok(())
+    }
+
+    pub fn type_keystrokes_in_guest(&self, keystroke: &str) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "typeKeystrokesInGuest",
+            self.get_vm()?,
+            keystroke,
+        ]))?;
+        Ok(())
+    }
+
+    pub fn capture_screen(&self, host_path: &str) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "captureScreen",
+            self.get_vm()?,
+            host_path,
+        ]))?;
+        Ok(())
+    }
+
+    pub fn get_guest_ip_address(&self, wait: bool) -> VmResult<String> {
+        let mut cmd = self.cmd();
+        cmd.args(&["getGuestIPAddress", self.get_vm()?]);
+        if wait {
+            cmd.arg("-wait");
+        }
+        let s = Self::exec(&mut cmd)?;
+        Ok(s)
+    }
+
+    pub fn install_tools(&self) -> VmResult<()> {
+        Self::exec(self.cmd().args(&["installTools", self.get_vm()?]))?;
+        Ok(())
+    }
+
+    pub fn check_tools_state(&self) -> VmResult<bool> {
+        let s =
+            Self::exec(self.cmd().args(&["checkToolsState", self.get_vm()?]))?;
+        match s.as_str() {
+            "installed" => Ok(true),
+            "unknown" => Ok(false),
+            "running" => Ok(true),
+            _ => vmerr!(ErrorKind::UnexpectedResponse(s)),
+        }
     }
 }
 
