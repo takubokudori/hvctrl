@@ -32,6 +32,25 @@ impl<T: AsRef<str>> From<T> for HostType {
     }
 }
 
+pub enum WriteVar<'a> {
+    GuestVar(&'a str, &'a str),
+    RuntimeConfig(&'a str, &'a str),
+    GuestEnv(&'a str, &'a str),
+}
+
+pub enum ReadVar<'a> {
+    GuestVar(&'a str),
+    RuntimeConfig(&'a str),
+    GuestEnv(&'a str),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ProcInfo {
+    pub pid: u32,
+    pub owner: String,
+    pub cmd: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct VmRun {
     host_type: &'static str,
@@ -363,6 +382,116 @@ impl VmRun {
         }
     }
 
+    pub fn set_shared_folder_state(
+        &self,
+        name: &str,
+        host_path: &str,
+        writable: bool,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["setSharedFolderState", name, host_path]);
+        cmd.arg(if writable { "writable" } else { "readonly" });
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn add_shared_folder(
+        &self,
+        name: &str,
+        host_path: &str,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["addSharedFolder", name, host_path]);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn remove_shared_folder(&self, name: &str) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["removeSharedFolder", name]);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn enable_shared_folders(
+        &self,
+        name: &str,
+        only_runtime: bool,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["enableSharedFolders", name]);
+        if only_runtime {
+            cmd.arg("runtime");
+        }
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn disable_shared_folders(
+        &self,
+        name: &str,
+        only_runtime: bool,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["disableSharedFolders", name]);
+        if only_runtime {
+            cmd.arg("runtime");
+        }
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn list_processes_in_guest(&self) -> VmResult<Vec<ProcInfo>> {
+        let s = Self::exec(
+            self.cmd().args(&["listProcessesInGuest", self.get_vm()?]),
+        )?;
+        let mut l = s.lines();
+        let n = match l.next() {
+            Some(s) => s
+                .strip_prefix("Total running VMs: ")
+                .expect("Unexpected list response")
+                .parse::<usize>()
+                .expect("Failed to parse to usize"),
+            None => return Ok(vec![]),
+        };
+        let mut ret = Vec::with_capacity(n);
+        for l in l {
+            let v: Vec<&str> = l.splitn(3, ", ").collect();
+            assert_eq!(v.len(), 3);
+            let (pid, owner, cmd) = (v[0], v[1], v[2]);
+            let pid = pid.strip_prefix("pid=").expect("Unexpected pid");
+            let pid: u32 = pid.parse().unwrap();
+            let owner = owner
+                .strip_prefix("owner=")
+                .expect("Unexpected owner")
+                .to_string();
+            let cmd = cmd
+                .strip_prefix("cmd=")
+                .expect("Unexpected process command")
+                .to_string();
+            ret.push(ProcInfo { pid, owner, cmd })
+        }
+        Ok(ret)
+    }
+
+    pub fn kill_process_in_guest(&self, pid: u32) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "killProcessInGuest",
+            self.get_vm()?,
+            &pid.to_string(),
+        ]))?;
+        Ok(())
+    }
+
+    pub fn delete_file_in_guest(&self, guest_path: &str) -> VmResult<()> {
+        Self::exec(self.cmd().args(&[
+            "deleteFileInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
+        Ok(())
+    }
+
     pub fn create_directory_in_guest(&self, guest_path: &str) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "createDirectoryInGuest",
@@ -391,9 +520,15 @@ impl VmRun {
         Ok(s)
     }
 
-    pub fn list_directory_in_guest(&self) -> VmResult<Vec<String>> {
-        let s =
-            Self::exec(self.cmd().args(&["checkToolsState", self.get_vm()?]))?;
+    pub fn list_directory_in_guest(
+        &self,
+        guest_path: &str,
+    ) -> VmResult<Vec<String>> {
+        let s = Self::exec(self.cmd().args(&[
+            "listDirectoryInGuest",
+            self.get_vm()?,
+            guest_path,
+        ]))?;
         Ok(s.lines().skip(1).map(|x| x.to_string()).collect())
     }
 
@@ -457,6 +592,36 @@ impl VmRun {
         Ok(())
     }
 
+    pub fn write_variable(&self, variable: WriteVar) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["writeVariable", self.get_vm()?]);
+        match variable {
+            WriteVar::GuestVar(name, value) => {
+                cmd.args(&["guestVar", name, value])
+            }
+            WriteVar::RuntimeConfig(name, value) => {
+                cmd.args(&["runtimeConfig", name, value])
+            }
+            WriteVar::GuestEnv(name, value) => {
+                cmd.args(&["guestEnv", name, value])
+            }
+        };
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn read_variable(&self, variable: ReadVar) -> VmResult<Option<String>> {
+        let mut cmd = self.cmd();
+        cmd.args(&["readVariable", self.get_vm()?]);
+        match variable {
+            ReadVar::GuestVar(name) => cmd.args(&["guestVar", name]),
+            ReadVar::RuntimeConfig(name) => cmd.args(&["runtimeConfig", name]),
+            ReadVar::GuestEnv(name) => cmd.args(&["guestEnv", name]),
+        };
+        let s = Self::exec(&mut cmd)?;
+        Ok(if s.is_empty() { None } else { Some(s) })
+    }
+
     pub fn get_guest_ip_address(&self, wait: bool) -> VmResult<String> {
         let mut cmd = self.cmd();
         cmd.args(&["getGuestIPAddress", self.get_vm()?]);
@@ -481,6 +646,11 @@ impl VmRun {
             "running" => Ok(true),
             _ => vmerr!(ErrorKind::UnexpectedResponse(s)),
         }
+    }
+
+    pub fn delete_vm(&self) -> VmResult<()> {
+        Self::exec(self.cmd().args(&["deleteVM", self.get_vm()?]))?;
+        Ok(())
     }
 }
 
