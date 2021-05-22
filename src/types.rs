@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::{process::Command, time::Duration};
 
 use std::string::FromUtf8Error;
-#[cfg(all(windows, feature = "windy"))]
+#[cfg(windows)]
 use windy::AString;
 
-#[cfg(all(windows, feature = "windy"))]
+#[cfg(windows)]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
     match cmd.output() {
@@ -24,8 +24,19 @@ pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
     }
 }
 
-/// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
+    #[cfg(windows)]
+    {
+        exec_cmd_astr(cmd)
+    }
+    #[cfg(not(windows))]
+    {
+        exec_cmd_utf8(cmd)
+    }
+}
+
+/// Executes `cmd` and Returns `(stdout, stderr)`.
+pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
     match cmd.output() {
         Ok(o) => Ok((
             String::from_utf8(o.stdout)
