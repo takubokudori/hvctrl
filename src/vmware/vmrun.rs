@@ -762,6 +762,6 @@ impl GuestCmd for VmRun {
         from_host_path: &str,
         to_guest_path: &str,
     ) -> VmResult<()> {
-        self.copy_file_from_guest_to_host(from_host_path, to_guest_path)
+        self.copy_file_from_host_to_guest(from_host_path, to_guest_path)
     }
 }
