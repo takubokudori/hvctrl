@@ -663,25 +663,23 @@ impl VmCmd for VmRun {
     }
 
     fn set_vm_by_name(&mut self, name: &str) -> VmResult<()> {
-        if !self
-            .list_vms()?
-            .iter()
-            .any(|vm| vm.name.as_deref() == Some(name))
-        {
-            return vmerr!(ErrorKind::VmNotFound);
+        for vm in self.list_vms()? {
+            if vm.name.as_deref() == Some(name) {
+                self.vm_path = vm.path;
+                return Ok(());
+            }
         }
-        Ok(())
+        vmerr!(ErrorKind::VmNotFound)
     }
 
     fn set_vm_by_path(&mut self, path: &str) -> VmResult<()> {
-        if !self
-            .list_vms()?
-            .iter()
-            .any(|vm| vm.path.as_deref() == Some(path))
-        {
-            return vmerr!(ErrorKind::VmNotFound);
+        for vm in self.list_vms()? {
+            if vm.path.as_deref() == Some(path) {
+                self.vm_path = vm.path;
+                return Ok(());
+            }
         }
-        Ok(())
+        vmerr!(ErrorKind::VmNotFound)
     }
 }
 
