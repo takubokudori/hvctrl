@@ -142,7 +142,7 @@ impl HyperVCmd {
         &mut self,
         vm_name: T,
     ) -> &mut Self {
-        self.vm_name = vm_name.into().map(|x| escape_pwsh(&x));
+        self.vm_name = vm_name.into().map(escape_pwsh);
         self
     }
 
@@ -239,7 +239,7 @@ impl HyperVCmd {
     ///
     /// For more information, See [Start-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/start-vm).
     pub fn start_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.start_vm_unescaped(vms.iter().map(|x| escape_pwsh(*x))) }
+        unsafe { self.start_vm_unescaped(vms.iter().map(escape_pwsh)) }
     }
 
     /// Starts VMs.
@@ -269,9 +269,7 @@ impl HyperVCmd {
     ///
     /// For more information, See [Restart-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/restart-vm).
     pub fn restart_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe {
-            self.restart_vm_unchecked(vms.iter().map(|x| escape_pwsh(*x)))
-        }
+        unsafe { self.restart_vm_unchecked(vms.iter().map(escape_pwsh)) }
     }
 
     /// Restarts VMs.
@@ -306,7 +304,7 @@ impl HyperVCmd {
     ) -> VmResult<()> {
         unsafe {
             self.stop_vm_unescaped(
-                vms.iter().map(|x| escape_pwsh(*x)),
+                vms.iter().map(escape_pwsh),
                 turn_off,
                 use_save,
             )
@@ -354,14 +352,13 @@ impl HyperVCmd {
     ///
     /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
     pub fn suspend_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe {
-            self.suspend_vm_unescaped(vms.iter().map(|x| escape_pwsh(*x)))
-        }
+        unsafe { self.suspend_vm_unescaped(vms.iter().map(escape_pwsh)) }
     }
 
     /// Suspends VMs.
     ///
     /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
+    ///
     /// # Safety
     ///
     /// This function doesn't escape `vms` strings, which can lead to command injection.
@@ -387,12 +384,13 @@ impl HyperVCmd {
     ///
     /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
     pub fn resume_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.resume_vm_unescaped(vms.iter().map(|x| escape_pwsh(*x))) }
+        unsafe { self.resume_vm_unescaped(vms.iter().map(escape_pwsh)) }
     }
 
     /// Resumes VMs.
     ///
     /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
+    ///
     /// # Safety
     ///
     /// This function doesn't escape `vms` strings, which can lead to command injection.
@@ -425,7 +423,7 @@ impl HyperVCmd {
     ) -> VmResult<()> {
         unsafe {
             self.copy_vm_file_unescaped(
-                vms.iter().map(|x| escape_pwsh(*x)),
+                vms.iter().map(escape_pwsh),
                 src_path,
                 dst_path,
                 create_full_path,
@@ -642,7 +640,7 @@ impl VmCmd for HyperVCmd {
     fn set_vm_by_id(&mut self, id: &str) -> VmResult<()> {
         for vm in self.list_vms()? {
             if id == vm.id.as_deref().expect("VMId does not exist") {
-                self.vm_name = vm.name;
+                self.vm_name(vm.name);
                 return Ok(());
             }
         }
@@ -652,7 +650,7 @@ impl VmCmd for HyperVCmd {
     fn set_vm_by_name(&mut self, name: &str) -> VmResult<()> {
         for vm in self.list_vms()? {
             if name == vm.name.as_deref().expect("Name does not exist") {
-                self.vm_name = vm.name;
+                self.vm_name(vm.name);
                 return Ok(());
             }
         }
@@ -660,13 +658,13 @@ impl VmCmd for HyperVCmd {
     }
 
     /// Due to the specification of Hyper-V, HyperVCmd does not support this function.
-    fn set_vm_by_path(&mut self, _path: &str) -> VmResult<()> {
+    fn set_vm_by_path(&mut self, _: &str) -> VmResult<()> {
         vmerr!(ErrorKind::UnsupportedCommand)
     }
 }
+
 impl PowerCmd for HyperVCmd {
     fn start(&self) -> VmResult<()> {
-        // SAFETY: self.vm_name is escaped on input.
         unsafe { self.start_vm_unescaped(&[self.retrieve_vm()?]) }
     }
 

@@ -17,7 +17,7 @@ mod test_cmd_util;
 #[cfg(test)]
 mod test_vboxmanage {
     use crate::test_cmd_util;
-    use hvctrl::virtualbox::VBoxManage;
+    use hvctrl::{types::ErrorKind::FileError, virtualbox::VBoxManage};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -83,5 +83,20 @@ mod test_vboxmanage {
     fn test_snapshot_cmd() {
         let cmd = get_cmd();
         test_cmd_util::test_snapshot_cmd(&cmd);
+    }
+
+    #[test]
+    fn test_guest_cmd() {
+        use hvctrl::types::{GuestCmd, PowerCmd};
+        let cmd = get_cmd();
+        // assert_eq!(Ok(()), cmd.start());
+        let os = cmd.get_os_version().expect("Failed to get os version");
+        if os.contains("Windows") {
+            cmd.copy_from_host_to_guest("rustfmt.toml", "AAAAA")
+                .unwrap();
+        } else {
+            cmd.copy_from_host_to_guest("rustfmt.toml", "/tmp")
+                .unwrap();
+        }
     }
 }

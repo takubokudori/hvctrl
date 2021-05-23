@@ -3,6 +3,7 @@
 //! [VBoxManage](https://www.virtualbox.org/manual/ch08.html) controller.
 use crate::types::*;
 use std::{
+    collections::HashMap,
     process::Command,
     time::{Duration, Instant},
 };
@@ -149,6 +150,10 @@ impl VBoxManage {
             ));
         }
 
+        if let Some(s) = s.strip_prefix("RTPathQueryInfo failed on ") {
+            return VmError::from(FileError(s.to_string()));
+        }
+
         if let Some(s) = s.strip_prefix("Invalid machine state: ") {
             starts_err!(s, "PoweredOff", InvalidPowerState(Stopped));
             starts_err!(s, "Paused", InvalidPowerState(Paused));
@@ -227,6 +232,44 @@ impl VBoxManage {
 
     pub fn show_vm_info(&self) -> VmResult<String> {
         self.show_vm_info2(&self.get_vm()?)
+    }
+
+    pub fn get_os_version(&self) -> VmResult<String> {
+        let s = self.show_vm_info()?;
+        let hm = Self::parse_info(&s, Some("Guest OS"));
+        Ok(hm["ostype"].to_string())
+    }
+
+    fn parse_info<'a>(
+        s: &'a str,
+        stopper: Option<&str>,
+    ) -> HashMap<&'a str, &'a str> {
+        let l = s.lines();
+        let mut hm = HashMap::new();
+        for x in l {
+            let x: Vec<&str> = x.splitn(2, '=').collect();
+            if x.len() != 2 {
+                continue;
+            }
+            let (key, value) = (x[0].trim(), x[1].trim());
+            let value = if value.len() >= 2 {
+                if value.starts_with('"') && value.ends_with('"') {
+                    // strip ""
+                    &value[1..value.len() - 1]
+                } else {
+                    value
+                }
+            } else {
+                value
+            };
+            hm.insert(key, value);
+            if let Some(stopper) = stopper {
+                if key == stopper {
+                    break;
+                }
+            }
+        }
+        hm
     }
 
     fn show_vm_info2(&self, id: &str) -> VmResult<String> {
@@ -482,30 +525,60 @@ impl VBoxManage {
         Ok(())
     }
 
-    /// Copies a file from guest to host.
+    /// Copies files from guest to host.
     pub fn copy_from(
         &self,
-        from_guest_path: &str,
+        follow: bool,
+        recursive: bool,
+        from_guest_paths: &[&str],
         to_host_path: &str,
     ) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["guestcontrol", &self.get_vm()?, "copyfrom"]);
         cmd.args(self.build_auth());
-        cmd.args(&[from_guest_path, to_host_path]);
+        if follow {
+            cmd.arg("--follow");
+        }
+        if recursive {
+            cmd.arg("-R");
+        }
+
+        cmd.args(from_guest_paths);
+        cmd.arg(to_host_path);
         Self::exec(&mut cmd)?;
         Ok(())
     }
 
-    /// Copies a file from host to guest.
+    /// Copies files from host to guest.
     pub fn copy_to(
         &self,
-        from_host_path: &str,
+        follow: bool,
+        recursive: bool,
+        from_host_paths: &[&str],
         to_guest_path: &str,
     ) -> VmResult<()> {
         let mut cmd = self.cmd();
         cmd.args(&["guestcontrol", &self.get_vm()?, "copyto"]);
         cmd.args(self.build_auth());
-        cmd.args(&[from_host_path, to_guest_path]);
+        if follow {
+            cmd.arg("--follow");
+        }
+        if recursive {
+            cmd.arg("-R");
+        }
+        cmd.args(from_host_paths);
+        cmd.arg(to_guest_path);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    /// Remove files from guest.
+    pub fn remove_file(&self, guest_paths: &[&str]) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["guestcontrol", &self.get_vm()?, "rm"]);
+        cmd.args(self.build_auth());
+        cmd.arg("-f");
+        cmd.args(guest_paths);
         Self::exec(&mut cmd)?;
         Ok(())
     }
@@ -538,6 +611,47 @@ impl VBoxManage {
         cmd.args(&["controlvm", &self.get_vm()?, "keyboardputstring"]);
         cmd.args(self.build_auth());
         cmd.args(v);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn install_ext_pack(
+        &self,
+        replace: bool,
+        accept_license: bool,
+        ext_pack_path: &str,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["extpack", "install"]);
+        if replace {
+            cmd.arg("--replace");
+        }
+        if accept_license {
+            cmd.arg("--accept-license=sha256");
+        }
+        cmd.arg(ext_pack_path);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn uninstall_ext_pack(
+        &self,
+        force: bool,
+        ext_pack_path: &str,
+    ) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["extpack", "uninstall"]);
+        if force {
+            cmd.arg("--force");
+        }
+        cmd.arg(ext_pack_path);
+        Self::exec(&mut cmd)?;
+        Ok(())
+    }
+
+    pub fn cleanup_ext_pack(&self) -> VmResult<()> {
+        let mut cmd = self.cmd();
+        cmd.args(&["extpack", "cleanup"]);
         Self::exec(&mut cmd)?;
         Ok(())
     }
@@ -710,7 +824,7 @@ impl GuestCmd for VBoxManage {
         from_guest_path: &str,
         to_host_path: &str,
     ) -> VmResult<()> {
-        self.copy_from(from_guest_path, to_host_path)
+        self.copy_from(false, true, &[from_guest_path], to_host_path)
     }
 
     fn copy_from_host_to_guest(
@@ -718,7 +832,7 @@ impl GuestCmd for VBoxManage {
         from_host_path: &str,
         to_guest_path: &str,
     ) -> VmResult<()> {
-        self.copy_to(from_host_path, to_guest_path)
+        self.copy_to(false, true, &[from_host_path], to_guest_path)
     }
 }
 

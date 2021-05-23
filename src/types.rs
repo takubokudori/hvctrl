@@ -90,6 +90,10 @@ pub enum ErrorKind {
     ExecutionFailed(String),
     FileError(String),
     GuestAuthenticationFailed,
+    GuestFileNotFound,
+    GuestFileExists,
+    HostFileNotFound,
+    HostFileExists,
     InvalidParameter(String),
     /// InvalidPowerState contains the current VM power state.
     InvalidPowerState(VmPowerState),
