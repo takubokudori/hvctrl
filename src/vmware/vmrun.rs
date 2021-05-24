@@ -1,4 +1,7 @@
-use crate::{types::*, vmware::read_vmware_preferences};
+use crate::{
+    types::*,
+    vmware::{read_vmware_inventory, read_vmware_preferences},
+};
 use std::{process::Command, time::Duration};
 
 pub enum HostType {
@@ -239,8 +242,14 @@ impl VmRun {
 
     pub fn list_all_vms(&self) -> VmResult<Vec<Vm>> {
         let p = std::env::var("APPDATA").expect("Failed to get %APPDATA%");
-        let vms =
-            read_vmware_preferences(&format!(r"{}\VMware\preferences.ini", p))?;
+        let vms = if self.executable_path.contains("VMware Player") {
+            // Player
+            read_vmware_preferences(&format!(r"{}\VMware\preferences.ini", p))?
+        } else {
+            // Workstation
+            read_vmware_inventory(&format!(r"{}\VMware\inventory.vmls", p))?
+        };
+
         if vms.is_none() {
             return vmerr!(Repr::Unknown(
                 "Cannot parse preferences file".to_string()
