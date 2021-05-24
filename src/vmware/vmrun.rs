@@ -457,7 +457,7 @@ impl VmRun {
         let mut l = s.lines();
         let n = match l.next() {
             Some(s) => s
-                .strip_prefix("Total running VMs: ")
+                .strip_prefix("Process list: ")
                 .expect("Unexpected list response")
                 .parse::<usize>()
                 .expect("Failed to parse to usize"),
