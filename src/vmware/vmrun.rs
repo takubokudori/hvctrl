@@ -58,6 +58,7 @@ pub struct ProcInfo {
 pub struct VmRun {
     host_type: &'static str,
     executable_path: String,
+    use_inventory: bool,
     vm_path: Option<String>,
     vm_password: Option<String>,
     guest_username: Option<String>,
@@ -74,6 +75,7 @@ impl VmRun {
         Self {
             host_type: "ws",
             executable_path: "vmrun".to_string(),
+            use_inventory: true,
             vm_path: None,
             vm_password: None,
             guest_username: None,
@@ -88,7 +90,12 @@ impl VmRun {
     );
 
     pub fn host_type<T: Into<HostType>>(&mut self, host_type: T) -> &mut Self {
-        self.host_type = host_type.into().as_str();
+        let host_type = host_type.into();
+        match host_type {
+            HostType::Player => self.use_inventory = false,
+            _ => self.use_inventory = true,
+        }
+        self.host_type = host_type.as_str();
         self
     }
 
@@ -96,6 +103,7 @@ impl VmRun {
     impl_setter!(@opt vm_password: String);
     impl_setter!(@opt guest_username: String);
     impl_setter!(@opt guest_password: String);
+    impl_setter!(use_inventory: bool);
     impl_setter!(gui: bool);
 
     #[inline]
@@ -242,12 +250,10 @@ impl VmRun {
 
     pub fn list_all_vms(&self) -> VmResult<Vec<Vm>> {
         let p = std::env::var("APPDATA").expect("Failed to get %APPDATA%");
-        let vms = if self.executable_path.contains("VMware Player") {
-            // Player
-            read_vmware_preferences(&format!(r"{}\VMware\preferences.ini", p))?
-        } else {
-            // Workstation
+        let vms = if self.use_inventory {
             read_vmware_inventory(&format!(r"{}\VMware\inventory.vmls", p))?
+        } else {
+            read_vmware_preferences(&format!(r"{}\VMware\preferences.ini", p))?
         };
 
         if vms.is_none() {
