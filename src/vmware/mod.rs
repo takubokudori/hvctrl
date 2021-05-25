@@ -192,7 +192,13 @@ fn parse_inventory<R: BufRead>(mut f: R) -> Option<Vec<Vm>> {
             }
         }
     }
-    Some(vm_list.values().cloned().collect())
+    Some(
+        vm_list
+            .values()
+            .filter(|x| x.path.as_deref() != Some(""))
+            .cloned()
+            .collect(),
+    )
 }
 
 #[test]
@@ -227,7 +233,7 @@ vmlist2.config = ""
 "#
     .as_bytes();
     let vm = parse_inventory(s).unwrap();
-    assert_eq!(vm[0].path.as_deref().unwrap(), r"");
+    assert_eq!(vm.len(), 0);
     let s = r#"encoding = "UTF-8"
 vm.DisplayName = ""
 "#
