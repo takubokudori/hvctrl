@@ -1,52 +1,11 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
-#![allow(dead_code)]
 #![allow(unused_macros)]
 use crate::vmerr;
 use serde::{Deserialize, Serialize};
-use std::{process::Command, time::Duration};
+use std::time::Duration;
 
 use std::string::FromUtf8Error;
-#[cfg(windows)]
-use windy::AString;
-
-#[cfg(windows)]
-/// Executes `cmd` and Returns `(stdout, stderr)`.
-pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
-    match cmd.output() {
-        Ok(o) => unsafe {
-            Ok((
-                AString::new_unchecked(o.stdout).to_string_lossy(),
-                AString::new_unchecked(o.stderr).to_string_lossy(),
-            ))
-        },
-        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
-    }
-}
-
-pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
-    #[cfg(windows)]
-    {
-        exec_cmd_astr(cmd)
-    }
-    #[cfg(not(windows))]
-    {
-        exec_cmd_utf8(cmd)
-    }
-}
-
-/// Executes `cmd` and Returns `(stdout, stderr)`.
-pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
-    match cmd.output() {
-        Ok(o) => Ok((
-            String::from_utf8(o.stdout)
-                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
-            String::from_utf8(o.stderr)
-                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
-        )),
-        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct VmError {

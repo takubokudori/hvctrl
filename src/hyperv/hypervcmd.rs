@@ -3,7 +3,7 @@
 //! Hyper-V cmdlets controller.
 //!
 //! Note: [In Windows Server 2012 R2, virtual machine snapshots were renamed to virtual machine checkpoints](https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn818483(v=ws.11))
-use crate::{deserialize, types::*};
+use crate::{deserialize, exec_cmd_astr, types::*};
 use serde::Deserialize;
 use std::{ffi::OsStr, process::Command, time::Duration};
 

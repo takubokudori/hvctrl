@@ -9,7 +9,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v1
-      - name: Run tests
+      - name: Build without feature
         run: cargo build --release --verbose
-      - name: Run tests
+      - name: Build with all features
         run: cargo build --release --verbose --all-features --all --examples
+      - name: Build with hyperv
+        run: cargo build --release --verbose --features hyperv
+      - name: Build with hypervcmd
+        run: cargo build --release --verbose --features hypervcmd
+      - name: Build with virtualbox
+        run: cargo build --release --verbose --features virtualbox
+      - name: Build with vboxmanage
+        run: cargo build --release --verbose --features vboxmanage
+      - name: Build with vmware
+        run: cargo build --release --verbose --features vmware
+      - name: Build with vmrest
+        run: cargo build --release --verbose --features vmrest
+      - name: Build with vmrun
+        run: cargo build --release --verbose --features vmrun

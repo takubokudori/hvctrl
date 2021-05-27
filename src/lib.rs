@@ -25,11 +25,54 @@ pub mod hyperv;
 pub mod virtualbox;
 pub mod vmware;
 
-use crate::types::{ErrorKind, VmResult};
+use crate::types::{ErrorKind, VmError, VmResult};
 use serde::Deserialize;
+use std::process::Command;
+#[cfg(windows)]
+use windy::AString;
 
 #[allow(dead_code)]
 pub(crate) fn deserialize<'a, T: Deserialize<'a>>(s: &'a str) -> VmResult<T> {
     serde_json::from_str(s)
         .map_err(|x| vmerr!(@r ErrorKind::UnexpectedResponse(x.to_string())))
+}
+
+#[cfg(windows)]
+#[allow(dead_code)]
+pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
+    match cmd.output() {
+        Ok(o) => unsafe {
+            Ok((
+                AString::new_unchecked(o.stdout).to_string_lossy(),
+                AString::new_unchecked(o.stderr).to_string_lossy(),
+            ))
+        },
+        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
+    #[cfg(windows)]
+    {
+        exec_cmd_astr(cmd)
+    }
+    #[cfg(not(windows))]
+    {
+        exec_cmd_utf8(cmd)
+    }
+}
+
+#[allow(dead_code)]
+/// Executes `cmd` and Returns `(stdout, stderr)`.
+pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
+    match cmd.output() {
+        Ok(o) => Ok((
+            String::from_utf8(o.stdout)
+                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
+            String::from_utf8(o.stderr)
+                .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
+        )),
+        Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
+    }
 }

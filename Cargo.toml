@@ -30,9 +30,9 @@ windy = { version = "0.1.4" }
 toml = "0.5"
 
 [features]
-hyperv = []
-virtualbox = []
-vmware = []
+hyperv = ["hypervcmd"]
+virtualbox = ["vboxmanage"]
+vmware = ["vmrest", "vmrun"]
 
 hypervcmd = []
 vboxmanage = []

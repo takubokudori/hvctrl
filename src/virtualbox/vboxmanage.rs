@@ -1,7 +1,7 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 //! [VBoxManage](https://www.virtualbox.org/manual/ch08.html) controller.
-use crate::types::*;
+use crate::{exec_cmd, types::*};
 use std::{
     collections::HashMap,
     process::Command,

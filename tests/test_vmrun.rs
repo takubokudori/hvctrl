@@ -65,6 +65,7 @@ mod test_vmrun {
             .unwrap()
             .is_match(&cmd.version().unwrap());
         cmd.list_all_vms().unwrap();
+        cmd.list_running_vms().unwrap();
     }
 
     #[test]

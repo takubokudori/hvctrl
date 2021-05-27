@@ -1,8 +1,9 @@
 use crate::{
+    exec_cmd_utf8,
     types::*,
     vmware::{read_vmware_inventory, read_vmware_preferences},
 };
-use std::{process::Command, time::Duration};
+use std::{borrow::Cow, process::Command, time::Duration};
 
 pub enum HostType {
     Player,
@@ -174,7 +175,7 @@ impl VmRun {
     }
 
     fn exec(cmd: &mut Command) -> VmResult<String> {
-        let (stdout, stderr) = exec_cmd(cmd)?;
+        let (stdout, stderr) = exec_cmd_utf8(cmd)?;
         if !stderr.is_empty() {
             Self::check(stderr)
         } else {
@@ -775,6 +776,47 @@ impl GuestCmd for VmRun {
         from_host_path: &str,
         to_guest_path: &str,
     ) -> VmResult<()> {
-        self.copy_file_from_host_to_guest(from_host_path, to_guest_path)
+        fn get_file_name<'a>(
+            p: &'a std::path::Path,
+            from_host_path: &str,
+        ) -> VmResult<Cow<'a, str>> {
+            p.file_name().map(|x| x.to_string_lossy()).ok_or_else(|| {
+                vmerr!(@r ErrorKind::InvalidParameter(
+                    from_host_path.to_string()
+                ))
+            })
+        }
+        let host_path = std::path::Path::new(from_host_path);
+        if !host_path.exists() {
+            return vmerr!(ErrorKind::HostFileNotFound);
+        }
+        if to_guest_path.is_empty() {
+            return vmerr!(ErrorKind::GuestFileNotFound);
+        }
+
+        // copyFileFromHostToGuest cannot copy if the specified guest path is a directory.
+        if to_guest_path.ends_with('\\') || to_guest_path.ends_with('/') {
+            // directory
+            let file_name = get_file_name(host_path, from_host_path)?;
+            let to_guest_path = format!("{}{}", to_guest_path, file_name);
+            self.copy_file_from_host_to_guest(from_host_path, &to_guest_path)
+        } else if self.directory_exists_in_guest(to_guest_path)? {
+            // directory
+            let file_name = get_file_name(host_path, from_host_path)?;
+            let guest_path_separator =
+                if to_guest_path.chars().next().unwrap() == '/' {
+                    '/'
+                } else {
+                    '\\'
+                };
+            let to_guest_path = format!(
+                "{}{}{}",
+                to_guest_path, guest_path_separator, file_name
+            );
+            self.copy_file_from_host_to_guest(from_host_path, &to_guest_path)
+        } else {
+            // file name
+            self.copy_file_from_host_to_guest(from_host_path, to_guest_path)
+        }
     }
 }

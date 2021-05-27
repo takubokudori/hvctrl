@@ -1,9 +1,9 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 //! VMware controllers.
-#[cfg(any(feature = "vmware", feature = "vmrest"))]
+#[cfg(feature = "vmrest")]
 pub mod vmrest;
-#[cfg(any(feature = "vmware", feature = "vmrun"))]
+#[cfg(feature = "vmrun")]
 pub mod vmrun;
 
 use crate::types::Vm;
@@ -11,9 +11,9 @@ use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader},
 };
-#[cfg(any(feature = "vmware", feature = "vmrest"))]
+#[cfg(feature = "vmrest")]
 pub use vmrest::*;
-#[cfg(any(feature = "vmware", feature = "vmrun"))]
+#[cfg(feature = "vmrun")]
 pub use vmrun::*;
 
 fn get_key_value(s: &str) -> Option<(&str, &str)> {

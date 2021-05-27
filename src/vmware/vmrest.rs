@@ -1,7 +1,7 @@
 // Copyright takubokudori.
 // This source code is licensed under the MIT or Apache-2.0 license.
 //! VMRest controller.
-use crate::{deserialize, types::*};
+use crate::{deserialize, exec_cmd, types::*};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::{
