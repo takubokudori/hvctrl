@@ -1,7 +1,7 @@
 # HvCtrl
 
 [![crates.io](https://img.shields.io/crates/v/hvctrl.svg)](https://crates.io/crates/hvctrl)
-[![docs.rs](https://docs.rs/windy/hvctrl.svg)](https://docs.rs/hvctrl)
+[![docs.rs](https://docs.rs/hvctrl/badge.svg)](https://docs.rs/hvctrl)
 
 A hypervisor controller library written in Rust.
 
