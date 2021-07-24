@@ -1,6 +1,6 @@
 # HvCtrl
 
-A hypervisor controller library
+A hypervisor controller library written in Rust.
 
 # Supported OS
 
@@ -16,14 +16,28 @@ Windows only.
 - [Hyper-V](https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/about/)
     - [Hyper-V cmdlets](https://docs.microsoft.com/en-us/powershell/module/hyper-v/?view=win10-ps)
 
-# Example
+# Installation
 
-Write the following lines to Cargo.toml.
+Features that can be used:
+
+- virtualbox
+    - vboxmanage
+- vmware
+    - vmrun
+    - vmrest
+- hyperv
+    - hypervcmd
+
+For example, if you want to control Virtual Box, write the following lines to Cargo.toml.
 
 ```
 [dependencies]
-hvctrl = {version = "0.1.0", features = ["vboxmanage"]}
+hvctrl = {git = "https://github.com/takubokudori/hvctrl", features = ["vboxmanage"]}
 ```
+
+# Examples
+
+See the `examples` directory.
 
 # License
 
