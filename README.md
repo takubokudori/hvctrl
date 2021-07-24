@@ -1,5 +1,8 @@
 # HvCtrl
 
+[![crates.io](https://img.shields.io/crates/v/hvctrl.svg)](https://crates.io/crates/hvctrl)
+[![docs.rs](https://docs.rs/windy/hvctrl.svg)](https://docs.rs/hvctrl)
+
 A hypervisor controller library written in Rust.
 
 # Supported OS
@@ -32,7 +35,7 @@ For example, if you want to control Virtual Box, write the following lines to Ca
 
 ```
 [dependencies]
-hvctrl = {git = "https://github.com/takubokudori/hvctrl", features = ["vboxmanage"]}
+hvctrl = {git = "0.1.0", features = ["vboxmanage"]}
 ```
 
 # Examples
@@ -41,4 +44,4 @@ See the `examples` directory.
 
 # License
 
-This software is released under the MIT or Apache-2.0 License, see LICENSE-MIT or LICENSE-APACHE.
+MIT or Apache-2.0 License.
