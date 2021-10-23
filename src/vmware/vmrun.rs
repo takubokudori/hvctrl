@@ -804,7 +804,7 @@ impl GuestCmd for VmRun {
             // directory
             let file_name = get_file_name(host_path, from_host_path)?;
             let guest_path_separator =
-                if to_guest_path.chars().next().unwrap() == '/' {
+                if to_guest_path.starts_with('/') {
                     '/'
                 } else {
                     '\\'

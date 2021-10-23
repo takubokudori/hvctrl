@@ -1,7 +1,5 @@
 //! List all VMs.
 
-use hvctrl::types::VmCmd;
-
 #[cfg(feature = "vboxmanage")]
 fn list_vbox_vms(exec_path: Option<&String>) {
     use hvctrl::virtualbox::VBoxManage;

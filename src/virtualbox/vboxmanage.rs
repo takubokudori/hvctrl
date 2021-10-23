@@ -191,7 +191,7 @@ impl VBoxManage {
             .to_ascii_lowercase()
             .starts_with(ERROR_STR)
         {
-            Err(Self::handle_error(&s[ERROR_STR.len()..].trim()))
+            Err(Self::handle_error(s[ERROR_STR.len()..].trim()))
         } else {
             Ok(s)
         }
@@ -231,7 +231,7 @@ impl VBoxManage {
     }
 
     pub fn show_vm_info(&self) -> VmResult<String> {
-        self.show_vm_info2(&self.get_vm()?)
+        self.show_vm_info2(self.get_vm()?)
     }
 
     pub fn get_os_version(&self) -> VmResult<String> {
@@ -290,7 +290,7 @@ impl VBoxManage {
     pub fn poweroff_vm(&self) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "controlvm",
-            &self.get_vm()?,
+            self.get_vm()?,
             "poweroff",
         ]))?;
         Ok(())
@@ -302,31 +302,31 @@ impl VBoxManage {
     pub fn acpi_power_button_vm(&self) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "controlvm",
-            &self.get_vm()?,
+            self.get_vm()?,
             "acpipowerbutton",
         ]))?;
         Ok(())
     }
 
     pub fn reset_vm(&self) -> VmResult<()> {
-        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "reset"]))?;
+        Self::exec(self.cmd().args(&["controlvm", self.get_vm()?, "reset"]))?;
         Ok(())
     }
 
     pub fn pause_vm(&self) -> VmResult<()> {
-        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "pause"]))?;
+        Self::exec(self.cmd().args(&["controlvm", self.get_vm()?, "pause"]))?;
         Ok(())
     }
 
     pub fn resume_vm(&self) -> VmResult<()> {
-        Self::exec(self.cmd().args(&["controlvm", &self.get_vm()?, "resume"]))?;
+        Self::exec(self.cmd().args(&["controlvm", self.get_vm()?, "resume"]))?;
         Ok(())
     }
 
     pub fn save_state_vm(&self) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "controlvm",
-            &self.get_vm()?,
+            self.get_vm()?,
             "savestate",
         ]))?;
         Ok(())
@@ -347,7 +347,7 @@ impl VBoxManage {
         }
         let s = Self::exec(self.cmd().args(&[
             "snapshot",
-            &self.get_vm()?,
+            self.get_vm()?,
             "list",
             "--machinereadable",
         ]))?;
@@ -476,7 +476,7 @@ impl VBoxManage {
         is_live: bool,
     ) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["snapshot", &self.get_vm()?, "take", name]);
+        cmd.args(&["snapshot", self.get_vm()?, "take", name]);
         if let Some(x) = description {
             cmd.args(&["--description", x]);
         }
@@ -490,7 +490,7 @@ impl VBoxManage {
     pub fn delete_snapshot(&self, name: &str) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "snapshot",
-            &self.get_vm()?,
+            self.get_vm()?,
             "delete",
             name,
         ]))?;
@@ -500,7 +500,7 @@ impl VBoxManage {
     pub fn restore_snapshot(&self, name: &str) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "snapshot",
-            &self.get_vm()?,
+            self.get_vm()?,
             "restore",
             name,
         ]))?;
@@ -510,7 +510,7 @@ impl VBoxManage {
     pub fn restore_current_snapshot(&self) -> VmResult<()> {
         Self::exec(self.cmd().args(&[
             "snapshot",
-            &self.get_vm()?,
+            self.get_vm()?,
             "restorecurrent",
         ]))?;
         Ok(())
@@ -518,7 +518,7 @@ impl VBoxManage {
 
     pub fn run(&self, guest_args: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["guestcontrol", &self.get_vm()?, "run"]);
+        cmd.args(&["guestcontrol", self.get_vm()?, "run"]);
         cmd.args(self.build_auth());
         cmd.args(guest_args);
         Self::exec(&mut cmd)?;
@@ -534,7 +534,7 @@ impl VBoxManage {
         to_host_path: &str,
     ) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["guestcontrol", &self.get_vm()?, "copyfrom"]);
+        cmd.args(&["guestcontrol", self.get_vm()?, "copyfrom"]);
         cmd.args(self.build_auth());
         if follow {
             cmd.arg("--follow");
@@ -558,7 +558,7 @@ impl VBoxManage {
         to_guest_path: &str,
     ) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["guestcontrol", &self.get_vm()?, "copyto"]);
+        cmd.args(&["guestcontrol", self.get_vm()?, "copyto"]);
         cmd.args(self.build_auth());
         if follow {
             cmd.arg("--follow");
@@ -575,7 +575,7 @@ impl VBoxManage {
     /// Remove files from guest.
     pub fn remove_file(&self, guest_paths: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["guestcontrol", &self.get_vm()?, "rm"]);
+        cmd.args(&["guestcontrol", self.get_vm()?, "rm"]);
         cmd.args(self.build_auth());
         cmd.arg("-f");
         cmd.args(guest_paths);
@@ -590,7 +590,7 @@ impl VBoxManage {
     ) -> VmResult<()> {
         use std::fmt::Write;
         let mut cmd = self.cmd();
-        cmd.args(&["controlvm", &self.get_vm()?, "keyboardputscancode"]);
+        cmd.args(&["controlvm", self.get_vm()?, "keyboardputscancode"]);
         cmd.args(self.build_auth());
 
         cmd.args(
@@ -608,7 +608,7 @@ impl VBoxManage {
 
     pub fn keyboard_put_string(&self, v: &[&str]) -> VmResult<()> {
         let mut cmd = self.cmd();
-        cmd.args(&["controlvm", &self.get_vm()?, "keyboardputstring"]);
+        cmd.args(&["controlvm", self.get_vm()?, "keyboardputstring"]);
         cmd.args(self.build_auth());
         cmd.args(v);
         Self::exec(&mut cmd)?;

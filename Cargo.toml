@@ -8,7 +8,8 @@ homepage = "https://github.com/takubokudori/hvctrl"
 keywords = ["hypervisor", "vmware", "virtualbox", "hyper-v"]
 description = "A hypervisor controller library"
 readme = "README.md"
-edition = "2018"
+edition = "2021"
+rust-version = "1.56"
 
 exclude = [
     ".gitignore",

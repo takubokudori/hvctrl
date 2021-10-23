@@ -181,7 +181,7 @@ impl HyperVCmd {
     pub fn get_power_state(&self) -> VmResult<VmPowerState> {
         let s = self
             .cmd("Get-VM")
-            .args(&[&self.retrieve_vm()?, "|select State|ConvertTo-Json"])
+            .args(&[self.retrieve_vm()?, "|select State|ConvertTo-Json"])
             .exec()?;
         #[derive(Deserialize)]
         struct Response {

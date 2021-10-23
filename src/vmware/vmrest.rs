@@ -199,7 +199,7 @@ impl VmRest {
         if ts == "404 page not found" {
             return vmerr!(ErrorKind::UnsupportedCommand);
         }
-        match serde_json::from_str::<VmRestFailedResponse>(&ts) {
+        match serde_json::from_str::<VmRestFailedResponse>(ts) {
             Ok(x) => Err(Self::handle_json_error(&x.message)),
             Err(_) => Ok(s),
         }
