@@ -4,7 +4,7 @@
 use hvctrl::{types::*, vmerr};
 use std::time::Duration;
 
-pub fn test_vm(cmd: &mut impl VmCmd) {
+pub fn test_vm_not_found(cmd: &mut impl VmCmd) {
     cmd.list_vms().unwrap();
     let x = cmd.set_vm_by_name("hvctrlDoesNotExistVmName");
     if x != vmerr!(ErrorKind::VmNotFound)

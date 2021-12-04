@@ -190,7 +190,7 @@ impl VmRest {
         #[derive(Debug, Clone, Deserialize)]
         struct VmRestFailedResponse {
             #[serde(alias = "Code")]
-            code: i32,
+            _code: i32,
             #[serde(alias = "Message")]
             message: String,
         }

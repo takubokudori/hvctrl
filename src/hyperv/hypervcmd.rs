@@ -246,26 +246,6 @@ impl HyperVCmd {
             .ok_or_else(|| VmError::from(ErrorKind::CredentialIsNotSpecified))
     }
 
-    fn cmd(&self, cmdlet: &'static str) -> PsCommand {
-        PsCommand::new(&self.executable_path, cmdlet)
-    }
-
-    fn cmd_with_session(
-        &self,
-        cmdlet: &'static str,
-        vm: &str,
-        username: &str,
-        password: &str,
-    ) -> PsCommand {
-        PsCommand::new_with_session(
-            &self.executable_path,
-            cmdlet,
-            vm,
-            username,
-            password,
-        )
-    }
-
     fn deserialize_resp<'a, T: Deserialize<'a>>(
         s: &'a str,
     ) -> VmResult<Vec<T>> {
@@ -277,482 +257,12 @@ impl HyperVCmd {
             Ok(vec![deserialize::<T>(s)?])
         }
     }
-
-    /// Gets a power state of the VM.
-    pub fn get_power_state(&self) -> VmResult<VmPowerState> {
-        let s = self
-            .cmd("Get-VM")
-            .args(&[self.retrieve_vm()?, "|select State|ConvertTo-Json"])
-            .exec()?;
-        #[derive(Deserialize)]
-        struct Response {
-            #[serde(alias = "State")]
-            state: u8,
-        }
-        let state = deserialize::<Response>(&s)?.state;
-        macro_rules! m {
-            ($x:ident) => {
-                state == PowerShellVmState::$x as u8
-            };
-        }
-        Ok(if m!(Running) || m!(RunningCritical) {
-            VmPowerState::Running
-        } else if m!(Off) || m!(OffCritical) {
-            VmPowerState::Stopped
-        } else if m!(Saved) || m!(SavedCritical) || m!(FastSaved) {
-            VmPowerState::Suspended
-        } else if m!(Paused) || m!(PausedCritical) {
-            VmPowerState::Paused
-        } else {
-            VmPowerState::Unknown
-        })
-    }
-
-    /// Gets a list of VMs.
-    pub fn get_vm(&self) -> VmResult<Vec<Vm>> {
-        let s = self
-            .cmd("Get-VM")
-            .arg("|select VMId, Name|ConvertTo-Json")
-            .exec()?;
-        #[derive(Deserialize)]
-        struct Response {
-            #[serde(alias = "VMId")]
-            id: String,
-            #[serde(alias = "Name")]
-            name: String,
-        }
-        if s.is_empty() {
-            // No snapshot.
-            return Ok(vec![]);
-        }
-        let resp = Self::deserialize_resp::<Response>(&s)?;
-        Ok(resp
-            .iter()
-            .map(|x| Vm {
-                id: Some(x.id.clone()),
-                name: Some(x.name.clone()),
-                path: None,
-            })
-            .collect())
-    }
-
-    /// Starts VMs.
-    ///
-    /// For more information, See [Start-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/start-vm).
-    pub fn start_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.start_vm_unescaped(vms.iter().map(escape_pwsh)) }
-    }
-
-    /// Starts VMs.
-    ///
-    /// For more information, See [Start-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/start-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    pub unsafe fn start_vm_unescaped<I>(&self, vms: I) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        let s = self.cmd("Start-VM").arg_array_unescaped(vms).exec()?;
-        if s.starts_with(
-            "WARNING: The virtual machine is already in the specified state.",
-        ) {
-            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Running));
-        }
-        Ok(())
-    }
-
-    /// Restarts VMs.
-    ///
-    /// For more information, See [Restart-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/restart-vm).
-    pub fn restart_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.restart_vm_unchecked(vms.iter().map(escape_pwsh)) }
-    }
-
-    /// Restarts VMs.
-    ///
-    /// For more information, See [Restart-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/restart-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    pub unsafe fn restart_vm_unchecked<I>(&self, vms: I) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        self.cmd("Restart-VM")
-            .arg("-Confirm:$false")
-            .arg_array_unescaped(vms)
-            .exec()?;
-        Ok(())
-    }
-
-    /// Stops VMs.
-    ///
-    /// For more information, See [Stop-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/stop-vm).
-    pub fn stop_vm(
-        &self,
-        vms: &[&str],
-        turn_off: bool,
-        use_save: bool,
-    ) -> VmResult<()> {
-        unsafe {
-            self.stop_vm_unescaped(
-                vms.iter().map(escape_pwsh),
-                turn_off,
-                use_save,
-            )
-        }
-    }
-
-    /// Stops VMs.
-    ///
-    /// For more information, See [Stop-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/stop-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    pub unsafe fn stop_vm_unescaped<I>(
-        &self,
-        vms: I,
-        turn_off: bool,
-        use_save: bool,
-    ) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        let mut cmd = self.cmd("Stop-VM");
-        cmd.arg("-Force");
-        cmd.arg_array_unescaped(vms);
-        if turn_off {
-            cmd.arg("-TurnOff");
-        }
-        if use_save {
-            cmd.arg("-Save");
-        }
-        let s = cmd.exec()?;
-        if s.starts_with(
-            "WARNING: The virtual machine is already in the specified state.",
-        ) {
-            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Stopped));
-        }
-        Ok(())
-    }
-
-    /// Suspends VMs.
-    ///
-    /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
-    pub fn suspend_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.suspend_vm_unescaped(vms.iter().map(escape_pwsh)) }
-    }
-
-    /// Suspends VMs.
-    ///
-    /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    pub unsafe fn suspend_vm_unescaped<I>(&self, vms: I) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        let s = self.cmd("Suspend-VM").arg_array_unescaped(vms).exec()?;
-        if s.starts_with(
-            "WARNING: The virtual machine is already in the specified state.",
-        ) {
-            return vmerr!(ErrorKind::InvalidPowerState(
-                VmPowerState::Suspended
-            ));
-        }
-        Ok(())
-    }
-
-    /// Resumes VMs.
-    ///
-    /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
-    pub fn resume_vm(&self, vms: &[&str]) -> VmResult<()> {
-        unsafe { self.resume_vm_unescaped(vms.iter().map(escape_pwsh)) }
-    }
-
-    /// Resumes VMs.
-    ///
-    /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    pub unsafe fn resume_vm_unescaped<I>(&self, vms: I) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        let s = self.cmd("Resume-VM").arg_array_unescaped(vms).exec()?;
-        if s.starts_with(
-            "WARNING: The virtual machine is already in the specified state.",
-        ) {
-            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Running));
-        }
-        Ok(())
-    }
-
-    /// Copies a file from the host to guests.
-    ///
-    /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
-    pub fn copy_vm_file(
-        &self,
-        vms: &[&str],
-        src_path: &str,
-        dst_path: &str,
-        create_full_path: bool,
-    ) -> VmResult<()> {
-        unsafe {
-            self.copy_vm_file_unescaped(
-                vms.iter().map(escape_pwsh),
-                src_path,
-                dst_path,
-                create_full_path,
-            )
-        }
-    }
-
-    /// Copies a file between from the host to guests.
-    ///
-    /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    ///
-    /// `src_path` and `dst_path` will be escaped in this function.
-    pub unsafe fn copy_vm_file_unescaped<I>(
-        &self,
-        vms: I,
-        src_path: &str,
-        dst_path: &str,
-        create_full_path: bool,
-    ) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        let mut cmd = self.cmd("Copy-VMFile");
-        cmd.arg_array_unescaped(vms);
-        cmd.args(&[
-            "-Force",
-            "-SourcePath",
-            &escape_pwsh(src_path),
-            "-DestinationPath",
-            &escape_pwsh(dst_path),
-            "-FileSource Host",
-        ]);
-        if create_full_path {
-            cmd.arg("-CreateFullPath");
-        }
-        cmd.exec()?;
-        Ok(())
-    }
-
-    pub unsafe fn copy_vm_file_from_guest_to_host_unescaped(
-        &self,
-        vm: &str,
-        src_path: &str,
-        dst_path: &str,
-        username: &str,
-        password: &str,
-    ) -> VmResult<()> {
-        let mut cmd =
-            self.cmd_with_session("Copy-Item", vm, username, password);
-        cmd.args(&[
-            "-FromSession $sess -Path",
-            src_path,
-            "-Destination",
-            dst_path,
-            "; Remove-PSSession $sess;",
-        ]);
-        cmd.exec()?;
-        Ok(())
-    }
-
-    /// Gets a list of checkpoints of the VM.
-    ///
-    /// For more information, See [Get-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/get-vmsnapshot).
-    pub fn get_vm_snapshot(&self) -> VmResult<Vec<Snapshot>> {
-        let s = self
-            .cmd("Get-VMSnapshot")
-            .args(&[
-                self.retrieve_vm()?,
-                "|select Id, Name, Notes|ConvertTo-Json",
-            ])
-            .exec()?;
-        #[derive(Deserialize)]
-        struct Response {
-            #[serde(alias = "Id")]
-            id: String,
-            #[serde(alias = "Name")]
-            name: String,
-            #[serde(alias = "Notes")]
-            detail: String,
-        }
-        if s.is_empty() {
-            // No snapshot.
-            return Ok(vec![]);
-        }
-        let resp = Self::deserialize_resp::<Response>(&s)?;
-        Ok(resp
-            .iter()
-            .map(|x| Snapshot {
-                id: Some(x.id.clone()),
-                name: Some(x.name.clone()),
-                detail: Some(x.detail.clone()),
-            })
-            .collect())
-    }
-
-    /// Creates a checkpoint named `name` of VMs.
-    ///
-    /// For more information, See [Checkpoint-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/checkpoint-vm).
-    pub fn checkpoint_vm<I>(&self, vms: I, name: &str) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        unsafe {
-            self.checkpoint_vm_unescaped(vms.into_iter().map(escape_pwsh), name)
-        }
-    }
-
-    /// Creates a checkpoint named `name` of VMs.
-    ///
-    /// For more information, See [Checkpoint-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/checkpoint-vm).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    ///
-    /// `name` will be escaped in this function.
-    pub unsafe fn checkpoint_vm_unescaped<I>(
-        &self,
-        vms: I,
-        name: &str,
-    ) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        self.cmd("Checkpoint-VM")
-            .arg_array_unescaped(vms)
-            .args(&["-SnapshotName", &escape_pwsh(name)])
-            .exec()?;
-        Ok(())
-    }
-
-    /// Restores a VM checkpoint named `name`.
-    ///
-    /// For more information, See [Restore-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/restore-vmsnapshot).
-    pub fn restore_vm_snapshot(
-        &self,
-        vm_name: &str,
-        name: &str,
-    ) -> VmResult<()> {
-        unsafe {
-            self.restore_vm_snapshot_unescaped(&escape_pwsh(vm_name), name)
-        }
-    }
-
-    /// Restores a VM checkpoint named `name`.
-    ///
-    /// For more information, See [Restore-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/restore-vmsnapshot).
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vm_name` string, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vm_name` before calling this function.
-    ///
-    /// `name` will be escaped in this function.
-    pub unsafe fn restore_vm_snapshot_unescaped(
-        &self,
-        vm_name: &str,
-        name: &str,
-    ) -> VmResult<()> {
-        self.cmd("Restore-VMSnapshot")
-            .args(&[
-                "-VMName",
-                vm_name,
-                "-Confirm:$false",
-                "-Name",
-                &escape_pwsh(name),
-            ])
-            .exec()?;
-        Ok(())
-    }
-
-    /// Removes a VM checkpoint named `name` from VMs.
-    ///
-    /// For more information, See [Remove-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/remove-vmsnapshot).
-    pub fn remove_vm_snapshot<I>(&self, vms: I, name: &str) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        unsafe {
-            self.remove_vm_snapshot_unescaped(
-                vms.into_iter().map(escape_pwsh),
-                name,
-            )
-        }
-    }
-
-    /// Removes a VM checkpoint named `name` from VMs.
-    ///
-    /// For more information, See [Remove-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/remove-vmsnapshot)
-    ///
-    /// # Safety
-    ///
-    /// This function doesn't escape `vms` strings, which can lead to command injection.
-    ///
-    /// Please be sure to escape `vms` before calling this function.
-    ///
-    /// `name` will be escaped in this function.
-    pub unsafe fn remove_vm_snapshot_unescaped<I>(
-        &self,
-        vms: I,
-        name: &str,
-    ) -> VmResult<()>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str> + AsRef<OsStr>,
-    {
-        self.cmd("Remove-VMSnapshot")
-            .arg_array_unescaped(vms)
-            .args(&["-Confirm:$false", "-Name", &escape_pwsh(name)])
-            .exec()?;
-        Ok(())
-    }
 }
 
 impl VmCmd for HyperVCmd {
-    fn list_vms(&self) -> VmResult<Vec<Vm>> { self.get_vm() }
+    fn list_vms(&self) -> VmResult<Vec<Vm>> {
+        raw::get_vm(&self.executable_path)
+    }
 
     /// `id` is VMId which can be obtained with `Get-VM|select VMId`.
     fn set_vm_by_id(&mut self, id: &str) -> VmResult<()> {
@@ -783,26 +293,60 @@ impl VmCmd for HyperVCmd {
 
 impl PowerCmd for HyperVCmd {
     fn start(&self) -> VmResult<()> {
-        unsafe { self.start_vm_unescaped(&[self.retrieve_vm()?]) }
+        unsafe {
+            raw_unescaped::start_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+            )
+        }
     }
 
     fn stop<D: Into<Option<Duration>>>(&self, _timeout: D) -> VmResult<()> {
-        unsafe { self.stop_vm_unescaped(&[self.retrieve_vm()?], false, false) }
+        unsafe {
+            raw_unescaped::stop_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+                false,
+                false,
+            )
+        }
     }
 
     fn hard_stop(&self) -> VmResult<()> {
-        unsafe { self.stop_vm_unescaped(&[self.retrieve_vm()?], true, false) }
+        unsafe {
+            raw_unescaped::stop_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+                true,
+                false,
+            )
+        }
     }
 
     fn suspend(&self) -> VmResult<()> {
-        unsafe { self.suspend_vm_unescaped(&[self.retrieve_vm()?]) }
+        unsafe {
+            raw_unescaped::suspend_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+            )
+        }
     }
     fn resume(&self) -> VmResult<()> {
-        unsafe { self.resume_vm_unescaped(&[self.retrieve_vm()?]) }
+        unsafe {
+            raw_unescaped::resume_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+            )
+        }
     }
 
     fn is_running(&self) -> VmResult<bool> {
-        Ok(self.get_power_state()? == VmPowerState::Running)
+        unsafe {
+            Ok(raw_unescaped::get_power_state_unescaped(
+                &self.executable_path,
+                self.retrieve_vm()?,
+            )? == VmPowerState::Running)
+        }
     }
 
     fn reboot<D: Into<Option<Duration>>>(&self, timeout: D) -> VmResult<()> {
@@ -835,15 +379,32 @@ fn test_escape_pwsh() {
 
 impl SnapshotCmd for HyperVCmd {
     fn list_snapshots(&self) -> VmResult<Vec<Snapshot>> {
-        self.get_vm_snapshot()
+        unsafe {
+            raw_unescaped::get_vm_snapshot_unescaped(
+                &self.executable_path,
+                self.retrieve_vm()?,
+            )
+        }
     }
 
     fn take_snapshot(&self, name: &str) -> VmResult<()> {
-        unsafe { self.checkpoint_vm_unescaped(&[self.retrieve_vm()?], name) }
+        unsafe {
+            raw_unescaped::checkpoint_vm_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+                &escape_pwsh(name),
+            )
+        }
     }
 
     fn revert_snapshot(&self, name: &str) -> VmResult<()> {
-        unsafe { self.restore_vm_snapshot_unescaped(self.retrieve_vm()?, name) }
+        unsafe {
+            raw_unescaped::restore_vm_snapshot_unescaped(
+                &self.executable_path,
+                self.retrieve_vm()?,
+                &escape_pwsh(name),
+            )
+        }
     }
 
     fn delete_snapshot(&self, name: &str) -> VmResult<()> {
@@ -854,7 +415,11 @@ impl SnapshotCmd for HyperVCmd {
             return vmerr!(ErrorKind::SnapshotNotFound);
         }
         unsafe {
-            self.remove_vm_snapshot_unescaped(&[self.retrieve_vm()?], name)
+            raw_unescaped::remove_vm_snapshot_unescaped(
+                &self.executable_path,
+                &[self.retrieve_vm()?],
+                &escape_pwsh(name),
+            )
         }
     }
 }
@@ -870,7 +435,8 @@ impl GuestCmd for HyperVCmd {
         to_host_path: &str,
     ) -> VmResult<()> {
         unsafe {
-            self.copy_vm_file_from_guest_to_host_unescaped(
+            raw_unescaped::copy_vm_file_from_guest_to_host_unescaped(
+                &self.executable_path,
                 self.retrieve_vm()?,
                 &escape_pwsh(from_guest_path),
                 &escape_pwsh(to_host_path),
@@ -886,10 +452,11 @@ impl GuestCmd for HyperVCmd {
         to_guest_path: &str,
     ) -> VmResult<()> {
         unsafe {
-            self.copy_vm_file_unescaped(
+            raw_unescaped::copy_vm_file_unescaped(
+                &self.executable_path,
                 &[self.retrieve_vm()?],
-                from_host_path,
-                to_guest_path,
+                &escape_pwsh(from_host_path),
+                &escape_pwsh(to_guest_path),
                 true,
             )
         }
@@ -928,4 +495,584 @@ pub enum PowerShellVmState {
     ResumingCritical,
     FastSavedCritical,
     FastSavingCritical,
+}
+
+pub mod raw {
+    use crate::{
+        hyperv::{escape_pwsh, hypervcmd::PsCommand, raw_unescaped, HyperVCmd},
+        types::*,
+        VmResult,
+    };
+    use serde::Deserialize;
+    use std::ffi::OsStr;
+    /// Gets a list of VMs.
+    pub fn get_vm(pwsh_path: &str) -> VmResult<Vec<Vm>> {
+        let s = PsCommand::new(pwsh_path, "Get-VM")
+            .arg("|select VMId, Name|ConvertTo-Json")
+            .exec()?;
+        #[derive(Deserialize)]
+        struct Response {
+            #[serde(alias = "VMId")]
+            id: String,
+            #[serde(alias = "Name")]
+            name: String,
+        }
+        if s.is_empty() {
+            // No snapshot.
+            return Ok(vec![]);
+        }
+        let resp = HyperVCmd::deserialize_resp::<Response>(&s)?;
+        Ok(resp
+            .iter()
+            .map(|x| Vm {
+                id: Some(x.id.clone()),
+                name: Some(x.name.clone()),
+                path: None,
+            })
+            .collect())
+    }
+
+    /// Gets a power state of the VM.
+    pub fn get_power_state(
+        pwsh_path: &str,
+        vm: &str,
+    ) -> VmResult<VmPowerState> {
+        unsafe {
+            raw_unescaped::get_power_state_unescaped(
+                pwsh_path,
+                &escape_pwsh(vm),
+            )
+        }
+    }
+
+    /// Starts VMs.
+    ///
+    /// For more information, See [Start-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/start-vm).
+    pub fn start_vm(pwsh_path: &str, vms: &[&str]) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::start_vm_unescaped(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+            )
+        }
+    }
+
+    /// Restarts VMs.
+    ///
+    /// For more information, See [Restart-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/restart-vm).
+    pub fn restart_vm(pwsh_path: &str, vms: &[&str]) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::restart_vm_unchecked(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+            )
+        }
+    }
+
+    /// Stops VMs.
+    ///
+    /// For more information, See [Stop-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/stop-vm).
+    pub fn stop_vm(
+        pwsh_path: &str,
+        vms: &[&str],
+        turn_off: bool,
+        use_save: bool,
+    ) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::stop_vm_unescaped(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+                turn_off,
+                use_save,
+            )
+        }
+    }
+
+    /// Suspends VMs.
+    ///
+    /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
+    pub fn suspend_vm(pwsh_path: &str, vms: &[&str]) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::suspend_vm_unescaped(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+            )
+        }
+    }
+
+    /// Resumes VMs.
+    ///
+    /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
+    pub fn resume_vm(pwsh_path: &str, vms: &[&str]) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::resume_vm_unescaped(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+            )
+        }
+    }
+
+    /// Copies a file from the host to guests.
+    ///
+    /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
+    pub fn copy_vm_file(
+        pwsh_path: &str,
+        vms: &[&str],
+        src_path: &str,
+        dst_path: &str,
+        create_full_path: bool,
+    ) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::copy_vm_file_unescaped(
+                pwsh_path,
+                vms.iter().map(escape_pwsh),
+                &escape_pwsh(src_path),
+                &escape_pwsh(dst_path),
+                create_full_path,
+            )
+        }
+    }
+
+    /// Gets a list of checkpoints of the VM.
+    ///
+    /// For more information, See [Get-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/get-vmsnapshot).
+    pub fn get_vm_snapshot(
+        pwsh_path: &str,
+        vm: &str,
+    ) -> VmResult<Vec<Snapshot>> {
+        unsafe {
+            raw_unescaped::get_vm_snapshot_unescaped(
+                pwsh_path,
+                &escape_pwsh(vm),
+            )
+        }
+    }
+
+    /// Creates a checkpoint named `name` of VMs.
+    ///
+    /// For more information, See [Checkpoint-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/checkpoint-vm).
+    pub fn checkpoint_vm<I>(pwsh_path: &str, vms: I, name: &str) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        unsafe {
+            raw_unescaped::checkpoint_vm_unescaped(
+                pwsh_path,
+                vms.into_iter().map(escape_pwsh),
+                &escape_pwsh(name),
+            )
+        }
+    }
+
+    /// Restores a VM checkpoint named `name`.
+    ///
+    /// For more information, See [Restore-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/restore-vmsnapshot).
+    pub fn restore_vm_snapshot(
+        pwsh_path: &str,
+        vm_name: &str,
+        name: &str,
+    ) -> VmResult<()> {
+        unsafe {
+            raw_unescaped::restore_vm_snapshot_unescaped(
+                pwsh_path,
+                &escape_pwsh(vm_name),
+                &escape_pwsh(name),
+            )
+        }
+    }
+
+    /// Removes a VM checkpoint named `name` from VMs.
+    ///
+    /// For more information, See [Remove-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/remove-vmsnapshot).
+    pub fn remove_vm_snapshot<I>(
+        pwsh_path: &str,
+        vms: I,
+        name: &str,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        unsafe {
+            raw_unescaped::remove_vm_snapshot_unescaped(
+                pwsh_path,
+                vms.into_iter().map(escape_pwsh),
+                &escape_pwsh(name),
+            )
+        }
+    }
+}
+
+pub mod raw_unescaped {
+    use crate::{
+        deserialize,
+        hyperv::{hypervcmd::PsCommand, *},
+        types::*,
+        VmResult,
+    };
+    use serde::Deserialize;
+    use std::ffi::OsStr;
+
+    /// Gets a power state of the VM.
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vm`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vm` before calling this function.
+    pub unsafe fn get_power_state_unescaped(
+        pwsh_path: &str,
+        vm: &str,
+    ) -> VmResult<VmPowerState> {
+        let s = PsCommand::new(pwsh_path, "Get-VM")
+            .args(&[vm, "|select State|ConvertTo-Json"])
+            .exec()?;
+        #[derive(Deserialize)]
+        struct Response {
+            #[serde(alias = "State")]
+            state: u8,
+        }
+        let state = deserialize::<Response>(&s)?.state;
+        macro_rules! m {
+            ($x:ident) => {
+                state == PowerShellVmState::$x as u8
+            };
+        }
+        Ok(if m!(Running) || m!(RunningCritical) {
+            VmPowerState::Running
+        } else if m!(Off) || m!(OffCritical) {
+            VmPowerState::Stopped
+        } else if m!(Saved) || m!(SavedCritical) || m!(FastSaved) {
+            VmPowerState::Suspended
+        } else if m!(Paused) || m!(PausedCritical) {
+            VmPowerState::Paused
+        } else {
+            VmPowerState::Unknown
+        })
+    }
+
+    /// Starts VMs.
+    ///
+    /// For more information, See [Start-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/start-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vms` before calling this function.
+    pub unsafe fn start_vm_unescaped<I>(pwsh_path: &str, vms: I) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        let res = PsCommand::new(pwsh_path, "Start-VM")
+            .arg_array_unescaped(vms)
+            .exec()?;
+        if res.starts_with(
+            "WARNING: The virtual machine is already in the specified state.",
+        ) {
+            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Running));
+        }
+        Ok(())
+    }
+
+    /// Stops VMs.
+    ///
+    /// For more information, See [Stop-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/stop-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vms` before calling this function.
+    pub unsafe fn stop_vm_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+        turn_off: bool,
+        use_save: bool,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        let mut cmd = PsCommand::new(pwsh_path, "Stop-VM");
+        cmd.arg("-Force");
+        cmd.arg_array_unescaped(vms);
+        if turn_off {
+            cmd.arg("-TurnOff");
+        }
+        if use_save {
+            cmd.arg("-Save");
+        }
+        let s = cmd.exec()?;
+        if s.starts_with(
+            "WARNING: The virtual machine is already in the specified state.",
+        ) {
+            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Stopped));
+        }
+        Ok(())
+    }
+
+    /// Suspends VMs.
+    ///
+    /// For more information, See [Suspend-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/suspend-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vms` before calling this function.
+    pub unsafe fn suspend_vm_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        let res = PsCommand::new(pwsh_path, "Suspend-VM")
+            .arg_array_unescaped(vms)
+            .exec()?;
+        if res.starts_with(
+            "WARNING: The virtual machine is already in the specified state.",
+        ) {
+            return vmerr!(ErrorKind::InvalidPowerState(
+                VmPowerState::Suspended
+            ));
+        }
+        Ok(())
+    }
+
+    /// Resumes VMs.
+    ///
+    /// For more information, See [Resume-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/resume-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vms` before calling this function.
+    pub unsafe fn resume_vm_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        let s = PsCommand::new(pwsh_path, "Resume-VM")
+            .arg_array_unescaped(vms)
+            .exec()?;
+        if s.starts_with(
+            "WARNING: The virtual machine is already in the specified state.",
+        ) {
+            return vmerr!(ErrorKind::InvalidPowerState(VmPowerState::Running));
+        }
+        Ok(())
+    }
+
+    /// Restarts VMs.
+    ///
+    /// For more information, See [Restart-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/restart-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, which can lead to command injection.
+    ///
+    /// Please be sure to escape `vms` before calling this function.
+    pub unsafe fn restart_vm_unchecked<I>(
+        pwsh_path: &str,
+        vms: I,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        PsCommand::new(pwsh_path, "Restart-VM")
+            .arg("-Confirm:$false")
+            .arg_array_unescaped(vms)
+            .exec()?;
+        Ok(())
+    }
+
+    /// Copies a file between from the host to guests.
+    ///
+    /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, `src_path` and `dst_path`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn copy_vm_file_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+        src_path: &str,
+        dst_path: &str,
+        create_full_path: bool,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        let mut cmd = PsCommand::new(pwsh_path, "Copy-VMFile");
+        cmd.arg_array_unescaped(vms);
+        cmd.args(&[
+            "-Force",
+            "-SourcePath",
+            src_path,
+            "-DestinationPath",
+            dst_path,
+            "-FileSource Host",
+        ]);
+        if create_full_path {
+            cmd.arg("-CreateFullPath");
+        }
+        cmd.exec()?;
+        Ok(())
+    }
+
+    /// Copies a file between from a guest to the host with PSSession.
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms`, `src_path`, `dst_path`, `username` and `password`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn copy_vm_file_from_guest_to_host_unescaped(
+        pwsh_path: &str,
+        vm: &str,
+        src_path: &str,
+        dst_path: &str,
+        username: &str,
+        password: &str,
+    ) -> VmResult<()> {
+        let mut cmd = PsCommand::new_with_session(
+            pwsh_path,
+            "Copy-Item",
+            vm,
+            username,
+            password,
+        );
+        cmd.args(&[
+            "-FromSession $sess -Path",
+            src_path,
+            "-Destination",
+            dst_path,
+            "; Remove-PSSession $sess;",
+        ]);
+        cmd.exec()?;
+        Ok(())
+    }
+
+    /// Gets a list of checkpoints of the VM.
+    ///
+    /// For more information, See [Get-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/get-vmsnapshot).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vm`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn get_vm_snapshot_unescaped(
+        pwsh_path: &str,
+        vm: &str,
+    ) -> VmResult<Vec<Snapshot>> {
+        let s = PsCommand::new(pwsh_path, "Get-VMSnapshot")
+            .args(&[vm, "|select Id, Name, Notes|ConvertTo-Json"])
+            .exec()?;
+        #[derive(Deserialize)]
+        struct Response {
+            #[serde(alias = "Id")]
+            id: String,
+            #[serde(alias = "Name")]
+            name: String,
+            #[serde(alias = "Notes")]
+            detail: String,
+        }
+        if s.is_empty() {
+            // No snapshot.
+            return Ok(vec![]);
+        }
+        let resp = HyperVCmd::deserialize_resp::<Response>(&s)?;
+        Ok(resp
+            .iter()
+            .map(|x| Snapshot {
+                id: Some(x.id.clone()),
+                name: Some(x.name.clone()),
+                detail: Some(x.detail.clone()),
+            })
+            .collect())
+    }
+
+    /// Creates a checkpoint named `name` of VMs.
+    ///
+    /// For more information, See [Checkpoint-VM](https://docs.microsoft.com/en-us/powershell/module/hyper-v/checkpoint-vm).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms` and `name`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn checkpoint_vm_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+        name: &str,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        PsCommand::new(pwsh_path, "Checkpoint-VM")
+            .arg_array_unescaped(vms)
+            .args(&["-SnapshotName", name])
+            .exec()?;
+        Ok(())
+    }
+
+    /// Restores a VM checkpoint named `name`.
+    ///
+    /// For more information, See [Restore-VMSnapshot](https://docs.microsoft.com/ja-jp/powershell/module/hyper-v/restore-vmsnapshot).
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vm_name` and `name`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn restore_vm_snapshot_unescaped(
+        pwsh_path: &str,
+        vm_name: &str,
+        name: &str,
+    ) -> VmResult<()> {
+        PsCommand::new(pwsh_path, "Restore-VMSnapshot")
+            .args(&["-VMName", vm_name, "-Confirm:$false -Name", name])
+            .exec()?;
+        Ok(())
+    }
+
+    /// Removes a VM checkpoint named `name` from VMs.
+    ///
+    /// For more information, See [Remove-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/remove-vmsnapshot)
+    ///
+    /// # Safety
+    ///
+    /// This function doesn't escape `vms` and `name`, which can lead to command injection.
+    ///
+    /// Please be sure to escape the parameters before calling this function.
+    pub unsafe fn remove_vm_snapshot_unescaped<I>(
+        pwsh_path: &str,
+        vms: I,
+        name: &str,
+    ) -> VmResult<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str> + AsRef<OsStr>,
+    {
+        PsCommand::new(pwsh_path, "Remove-VMSnapshot")
+            .arg_array_unescaped(vms)
+            .args(&["-Confirm:$false -Name", name])
+            .exec()?;
+        Ok(())
+    }
 }

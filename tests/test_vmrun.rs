@@ -71,7 +71,7 @@ mod test_vmrun {
     #[test]
     fn test_vm_cmd() {
         let mut cmd = get_cmd();
-        test_cmd_util::test_vm(&mut cmd);
+        test_cmd_util::test_vm_not_found(&mut cmd);
     }
 
     #[test]
