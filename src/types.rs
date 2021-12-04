@@ -59,6 +59,7 @@ pub enum ErrorKind {
     FromUtf8Error(FromUtf8Error),
     NetworkAdaptorNotFound,
     NetworkNotFound,
+    PermissionDenied,
     /// Requires any privileges to control a VM.
     PrivilegesRequired,
     /// The guest service (e.g., [VirtualBox Guest Additions](https://www.virtualbox.org/manual/ch04.html#guestadd-intro), [VMware Tools](https://docs.vmware.com/en/VMware-Tools/index.html), [Hyper-V Integration Service](https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/reference/integration-services), etc...) that controls a VM is not running, ready or installed.
@@ -70,6 +71,7 @@ pub enum ErrorKind {
     UnexpectedResponse(String),
     UnsupportedCommand,
     VmIsNotSpecified,
+    CredentialIsNotSpecified,
     VmNotFound,
 }
 

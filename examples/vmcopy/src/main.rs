@@ -111,9 +111,9 @@ impl VmCopyCmd for hvctrl::virtualbox::vboxmanage::VBoxManage {
 }
 
 impl VmCopyCmd for hvctrl::hyperv::HyperVCmd {
-    fn gu(&mut self, _: Option<String>) { unreachable!() }
+    fn gu(&mut self, gu: Option<String>) { self.guest_username(gu); }
 
-    fn gp(&mut self, _: Option<String>) { unreachable!() }
+    fn gp(&mut self, gp: Option<String>) { self.guest_password(gp); }
 }
 impl VmCopyCmd for hvctrl::vmware::VmRun {
     fn gu(&mut self, gu: Option<String>) { self.guest_username(gu); }
@@ -156,6 +156,7 @@ fn get_cmd(
 }
 
 fn main() {
+    env_logger::init();
     let m = App::new("VMCopy")
         .arg(Arg::new("tool").short('t').long("tool").takes_value(true))
         .arg(
@@ -172,6 +173,11 @@ fn main() {
             Arg::new("use_default_exe")
                 .long("use-default-exe")
                 .about("Use default executable path"),
+        )
+        .arg(
+            Arg::new("copy_from_guest")
+                .long("copy-from-guest")
+                .about("Copy a file from guest flag"),
         )
         .arg(
             Arg::new("vm_name")
@@ -237,6 +243,7 @@ fn main() {
         Some(exec_path.as_str())
     };
     let use_player = m.is_present("use_player");
+    let copy_from_guest = m.is_present("copy_from_guest");
     let mut cmd = get_cmd(tool, exec_path, use_player);
 
     let vm_name = input_vm_name(&m, "vm_name", cmd.as_ref());
@@ -245,13 +252,22 @@ fn main() {
             cmd.gu(Some(input(&m, "gu", "Guest username")));
             cmd.gp(Some(input_password(&m, "gp")));
         }
-        _ => {}
+        Tool::HyperV => {
+            if copy_from_guest {
+                cmd.gu(Some(input(&m, "gu", "Guest username")));
+                cmd.gp(Some(input_password(&m, "gp")));
+            }
+        }
     }
 
     let src = input(&m, "src", "Source path");
     let dst = input(&m, "dst", "Destination path");
 
     println!("\nExecutable path: {:?}", exec_path);
+    println!(
+        "Copy from: {}",
+        if copy_from_guest { "Guest" } else { "Host" }
+    );
     println!("VM name: {}", vm_name);
     println!("Source path: {}", src);
     println!("Destination path: {}", dst);
@@ -270,9 +286,16 @@ fn main() {
         }
     }
 
-    match cmd.copy_from_host_to_guest(&src, &dst) {
-        Ok(_) => println!("success!"),
-        Err(x) => println!("Failed to copy a file: {:?}", x),
+    if copy_from_guest {
+        match cmd.copy_from_guest_to_host(&src, &dst) {
+            Ok(_) => println!("success!"),
+            Err(x) => println!("Failed to copy a file: {:?}", x),
+        }
+    } else {
+        match cmd.copy_from_host_to_guest(&src, &dst) {
+            Ok(_) => println!("success!"),
+            Err(x) => println!("Failed to copy a file: {:?}", x),
+        }
     }
 
     print!("Press enter!");

@@ -29,6 +29,8 @@ pub fn escape_pwsh<S: AsRef<str>>(s: S) -> String {
 pub struct HyperVCmd {
     executable_path: String,
     vm_name: Option<String>,
+    guest_username: Option<String>,
+    guest_password: Option<String>,
 }
 
 impl Default for HyperVCmd {
@@ -36,6 +38,8 @@ impl Default for HyperVCmd {
         Self {
             executable_path: "powershell".to_string(),
             vm_name: None,
+            guest_username: None,
+            guest_password: None,
         }
     }
 }
@@ -49,6 +53,43 @@ impl PsCommand {
     fn new(mut cmd: Command, cmdlet_name: &'static str) -> Self {
         cmd.arg(cmdlet_name);
         PsCommand { cmd, cmdlet_name }
+    }
+
+    fn new_with_session(
+        cmd: Command,
+        cmdlet_name: &'static str,
+        vm: &str,
+        username: &str,
+        password: &str,
+    ) -> Self {
+        let mut psc = PsCommand { cmd, cmdlet_name };
+        psc.create_session(vm, username, password);
+        psc.cmd.arg(cmdlet_name);
+        psc
+    }
+
+    fn create_session(
+        &mut self,
+        vm: &str,
+        username: &str,
+        password: &str,
+    ) -> &mut Self {
+        self.cmd.args(&[
+            "$password = ConvertTo-SecureString",
+            password,
+            "-AsPlainText -Force;",
+        ]);
+        self.cmd.args(&[
+            "$cred = New-Object System.Management.Automation.PSCredential (",
+            username,
+            ", $password);",
+        ]);
+        self.cmd.args(&[
+            "$sess = New-PSSession -VMName",
+            vm,
+            "-Credential $cred;",
+        ]);
+        self
     }
 
     fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
@@ -119,6 +160,12 @@ impl PsCommand {
             "Unable to find a snapshot matching the given criteria.",
             ErrorKind::SnapshotNotFound
         );
+        if let Some(s) = s.strip_prefix("Access to the path") {
+            if s.contains(" is denied.") {
+                return VmError::from(ErrorKind::PermissionDenied);
+            }
+            return VmError::from(ErrorKind::UnexpectedResponse(s.to_string()));
+        }
         if let Some(s) = s.strip_prefix(IP) {
             let p = s.find("'.").unwrap();
             return VmError::from(ErrorKind::InvalidParameter(
@@ -146,6 +193,22 @@ impl HyperVCmd {
         self
     }
 
+    pub fn guest_username<T: Into<Option<String>>>(
+        &mut self,
+        guest_username: T,
+    ) -> &mut Self {
+        self.guest_username = guest_username.into().map(escape_pwsh);
+        self
+    }
+
+    pub fn guest_password<T: Into<Option<String>>>(
+        &mut self,
+        guest_password: T,
+    ) -> &mut Self {
+        self.guest_password = guest_password.into().map(escape_pwsh);
+        self
+    }
+
     pub fn get_vm_name(&self) -> Option<&str> { self.vm_name.as_deref() }
 
     fn retrieve_vm(&self) -> VmResult<&str> {
@@ -155,14 +218,46 @@ impl HyperVCmd {
             .ok_or_else(|| VmError::from(ErrorKind::VmIsNotSpecified))
     }
 
+    fn retrieve_username(&self) -> VmResult<&str> {
+        // self.username is escaped on input.
+        self.guest_username
+            .as_deref()
+            .ok_or_else(|| VmError::from(ErrorKind::CredentialIsNotSpecified))
+    }
+
+    fn retrieve_password(&self) -> VmResult<&str> {
+        // self.password is escaped on input.
+        self.guest_password
+            .as_deref()
+            .ok_or_else(|| VmError::from(ErrorKind::CredentialIsNotSpecified))
+    }
+
     fn cmd(&self, cmdlet: &'static str) -> PsCommand {
         let mut cmd = Command::new(&self.executable_path);
         cmd.args(&[
             "-NoProfile",
             "-NoLogo",
+            "-Command",
             "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
         ]);
         PsCommand::new(cmd, cmdlet)
+    }
+
+    fn cmd_with_session(
+        &self,
+        cmdlet: &'static str,
+        vm: &str,
+        username: &str,
+        password: &str,
+    ) -> PsCommand {
+        let mut cmd = Command::new(&self.executable_path);
+        cmd.args(&[
+            "-NoProfile",
+            "-NoLogo",
+            "-Command",
+            "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
+        ]);
+        PsCommand::new_with_session(cmd, cmdlet, vm, username, password)
     }
 
     fn deserialize_resp<'a, T: Deserialize<'a>>(
@@ -410,7 +505,7 @@ impl HyperVCmd {
         Ok(())
     }
 
-    /// Copies a file between the host and guests.
+    /// Copies a file from the host to guests.
     ///
     /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
     pub fn copy_vm_file(
@@ -419,7 +514,6 @@ impl HyperVCmd {
         src_path: &str,
         dst_path: &str,
         create_full_path: bool,
-        guest_to_host: bool,
     ) -> VmResult<()> {
         unsafe {
             self.copy_vm_file_unescaped(
@@ -427,12 +521,11 @@ impl HyperVCmd {
                 src_path,
                 dst_path,
                 create_full_path,
-                guest_to_host,
             )
         }
     }
 
-    /// Copies a file between the host and guests.
+    /// Copies a file between from the host to guests.
     ///
     /// For more information, See [Copy-VMFile](https://docs.microsoft.com/en-us/powershell/module/hyper-v/copy-vmfile).
     ///
@@ -449,7 +542,6 @@ impl HyperVCmd {
         src_path: &str,
         dst_path: &str,
         create_full_path: bool,
-        guest_to_host: bool,
     ) -> VmResult<()>
     where
         I: IntoIterator,
@@ -463,12 +555,32 @@ impl HyperVCmd {
             &escape_pwsh(src_path),
             "-DestinationPath",
             &escape_pwsh(dst_path),
-            "-FileSource",
-            if guest_to_host { "Guest" } else { "Host" },
+            "-FileSource Host",
         ]);
         if create_full_path {
             cmd.arg("-CreateFullPath");
         }
+        cmd.exec()?;
+        Ok(())
+    }
+
+    pub unsafe fn copy_vm_file_from_guest_to_host_unescaped(
+        &self,
+        vm: &str,
+        src_path: &str,
+        dst_path: &str,
+        username: &str,
+        password: &str,
+    ) -> VmResult<()> {
+        let mut cmd =
+            self.cmd_with_session("Copy-Item", vm, username, password);
+        cmd.args(&[
+            "-FromSession $sess -Path",
+            src_path,
+            "-Destination",
+            dst_path,
+            "; Remove-PSSession $sess;",
+        ]);
         cmd.exec()?;
         Ok(())
     }
@@ -752,12 +864,12 @@ impl GuestCmd for HyperVCmd {
         to_host_path: &str,
     ) -> VmResult<()> {
         unsafe {
-            self.copy_vm_file_unescaped(
-                &[self.retrieve_vm()?],
-                from_guest_path,
-                to_host_path,
-                true,
-                true,
+            self.copy_vm_file_from_guest_to_host_unescaped(
+                self.retrieve_vm()?,
+                &escape_pwsh(from_guest_path),
+                &escape_pwsh(to_host_path),
+                self.retrieve_username()?,
+                self.retrieve_password()?,
             )
         }
     }
@@ -773,7 +885,6 @@ impl GuestCmd for HyperVCmd {
                 from_host_path,
                 to_guest_path,
                 true,
-                false,
             )
         }
     }
