@@ -50,18 +50,32 @@ struct PsCommand {
 }
 
 impl PsCommand {
-    fn new(mut cmd: Command, cmdlet_name: &'static str) -> Self {
+    fn new(pwsh_path: &str, cmdlet_name: &'static str) -> Self {
+        let mut cmd = Command::new(pwsh_path);
+        cmd.args(&[
+            "-NoProfile",
+            "-NoLogo",
+            "-Command",
+            "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
+        ]);
         cmd.arg(cmdlet_name);
         PsCommand { cmd, cmdlet_name }
     }
 
     fn new_with_session(
-        cmd: Command,
+        pwsh_path: &str,
         cmdlet_name: &'static str,
         vm: &str,
         username: &str,
         password: &str,
     ) -> Self {
+        let mut cmd = Command::new(pwsh_path);
+        cmd.args(&[
+            "-NoProfile",
+            "-NoLogo",
+            "-Command",
+            "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
+        ]);
         let mut psc = PsCommand { cmd, cmdlet_name };
         psc.create_session(vm, username, password);
         psc.cmd.arg(cmdlet_name);
@@ -233,14 +247,7 @@ impl HyperVCmd {
     }
 
     fn cmd(&self, cmdlet: &'static str) -> PsCommand {
-        let mut cmd = Command::new(&self.executable_path);
-        cmd.args(&[
-            "-NoProfile",
-            "-NoLogo",
-            "-Command",
-            "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
-        ]);
-        PsCommand::new(cmd, cmdlet)
+        PsCommand::new(&self.executable_path, cmdlet)
     }
 
     fn cmd_with_session(
@@ -250,14 +257,13 @@ impl HyperVCmd {
         username: &str,
         password: &str,
     ) -> PsCommand {
-        let mut cmd = Command::new(&self.executable_path);
-        cmd.args(&[
-            "-NoProfile",
-            "-NoLogo",
-            "-Command",
-            "[Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US';", // Make the exception message English.
-        ]);
-        PsCommand::new_with_session(cmd, cmdlet, vm, username, password)
+        PsCommand::new_with_session(
+            &self.executable_path,
+            cmdlet,
+            vm,
+            username,
+            password,
+        )
     }
 
     fn deserialize_resp<'a, T: Deserialize<'a>>(
