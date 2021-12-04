@@ -5,9 +5,11 @@ authors = ["takubokudori <takubokudori@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/takubokudori/vmcopy"
 homepage = "https://github.com/takubokudori/vmcopy"
-edition = "2018"
+edition = "2021"
+rust-version = "1.57"
 
 [dependencies]
 clap = "3.0.0-beta.2"
 hvctrl = { path = "../../", features = ["hypervcmd", "vboxmanage", "vmrun"] }
 rpassword = "5.0.1"
+env_logger = "0.9.0"

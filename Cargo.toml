@@ -9,7 +9,7 @@ keywords = ["hypervisor", "vmware", "virtualbox", "hyper-v"]
 description = "A hypervisor controller library"
 readme = "README.md"
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.57"
 
 exclude = [
     ".gitignore",
@@ -21,12 +21,13 @@ all-features = true
 default-target = "x86_64-pc-windows-msvc"
 
 [dependencies]
-encoding_rs = "0.8.28"
+encoding_rs = "0.8.29"
 regex = "1.5"
 reqwest = { version = "0.11", features = ["blocking", "json"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 windy = { version = "0.2.0" }
+log = "0.4.14"
 
 [dev-dependencies]
 toml = "0.5"

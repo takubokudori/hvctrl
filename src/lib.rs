@@ -25,9 +25,13 @@ pub mod hyperv;
 pub mod virtualbox;
 pub mod vmware;
 
+#[macro_use]
+extern crate log;
+
 use crate::types::{ErrorKind, VmError, VmResult};
+use log::Level;
 use serde::Deserialize;
-use std::process::Command;
+use std::{io::Write, process::Command};
 #[cfg(windows)]
 use windy::AString;
 
@@ -40,6 +44,7 @@ pub(crate) fn deserialize<'a, T: Deserialize<'a>>(s: &'a str) -> VmResult<T> {
 #[cfg(windows)]
 #[allow(dead_code)]
 pub(crate) fn exec_cmd_astr(cmd: &mut Command) -> VmResult<(String, String)> {
+    dbg_cmd(cmd);
     match cmd.output() {
         Ok(o) => unsafe {
             Ok((
@@ -66,6 +71,7 @@ pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
 #[allow(dead_code)]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
 pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
+    dbg_cmd(cmd);
     match cmd.output() {
         Ok(o) => Ok((
             String::from_utf8(o.stdout)
@@ -74,5 +80,20 @@ pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
                 .map_err(|e| VmError::from(ErrorKind::FromUtf8Error(e)))?,
         )),
         Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn dbg_cmd(cmd: &Command) {
+    if log_enabled!(Level::Debug) {
+        let args = cmd.get_args();
+        let stdout = std::io::stdout();
+        let mut stdout = stdout.lock();
+        write!(stdout, "{}", cmd.get_program().to_str().unwrap()).unwrap();
+        for arg in args {
+            write!(stdout, " {}", arg.to_str().unwrap()).unwrap();
+        }
+        writeln!(stdout).unwrap();
+        stdout.flush().unwrap();
     }
 }
