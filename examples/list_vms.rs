@@ -21,7 +21,7 @@ fn list_vbox_vms(exec_path: Option<&String>) {
 
 #[cfg(feature = "vmrun")]
 fn list_vmware_vms(exec_path: Option<&String>) {
-    use hvctrl::vmware::vmrun::VmRun;
+    use hvctrl::{types::VmCmd, vmware::vmrun::VmRun};
     let mut cmd = VmRun::new();
     if let Some(e) = exec_path {
         cmd.executable_path(e);
@@ -40,7 +40,7 @@ fn list_vmware_vms(exec_path: Option<&String>) {
 
 #[cfg(feature = "hypervcmd")]
 fn list_hyperv_vms(exec_path: Option<&String>) {
-    use hvctrl::hyperv::HyperVCmd;
+    use hvctrl::{hyperv::HyperVCmd, types::VmCmd};
     let mut cmd = HyperVCmd::new();
     if let Some(e) = exec_path {
         cmd.executable_path(e);
