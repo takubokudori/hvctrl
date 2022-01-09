@@ -158,66 +158,73 @@ fn get_cmd(
 fn main() {
     env_logger::init();
     let m = App::new("VMCopy")
-        .arg(Arg::new("tool").short('t').long("tool").takes_value(true))
+        .arg(
+            Arg::new("tool")
+                .short('t')
+                .long("tool")
+                .takes_value(true)
+                .help(
+                    "A tool to send a file to VM. The parameter can be \
+                     Hyper-V (or hyperv, hv), VirtualBox (or vbox) or VMware \
+                     (or vw)",
+                ),
+        )
         .arg(
             Arg::new("executable_path")
                 .short('e')
                 .long("exec")
                 .takes_value(true)
-                .about(
-                    "A tool to send a file to VM. The parameter is Hyper-V, \
-                     VirtualBox or VMware",
-                ),
+                .help("The path to the tool executable path"),
         )
         .arg(
             Arg::new("use_default_exe")
                 .long("use-default-exe")
-                .about("Use default executable path"),
+                .help("Use default executable path"),
         )
         .arg(
             Arg::new("copy_from_guest")
                 .long("copy-from-guest")
-                .about("Copy a file from guest flag"),
+                .help("Copy a file from guest flag"),
         )
         .arg(
             Arg::new("vm_name")
                 .short('n')
                 .long("vm")
                 .takes_value(true)
-                .about("VM name to send a file"),
+                .help("VM name to send a file"),
         )
         .arg(
             Arg::new("src")
                 .short('s')
                 .long("src")
                 .takes_value(true)
-                .about("A source path on host"),
+                .help("A source path on host"),
         )
         .arg(
             Arg::new("dst")
                 .short('d')
                 .long("dst")
                 .takes_value(true)
-                .about("A destination path on guest"),
+                .help("A destination path on guest"),
         )
         .arg(
             Arg::new("guest_username")
                 .short('u')
                 .long("gu")
                 .takes_value(true)
-                .about("A guest username at logon"),
+                .help("A guest username at logon"),
         )
         .arg(
             Arg::new("guest_password")
                 .short('p')
                 .long("gp")
                 .takes_value(true)
-                .about("A guest password at logon"),
+                .help("A guest password at logon"),
         )
         .arg(
             Arg::new("use_player")
                 .long("player")
-                .about("use VMware Player"),
+                .help("use VMware Player"),
         )
         .get_matches();
 
@@ -233,15 +240,11 @@ fn main() {
     println!("\nTool: {}", tool);
 
     let exec_path = if !m.is_present("use_default_exe") {
-        input(&m, "executable_path", "Executable path")
+        Some(input(&m, "executable_path", "Executable path"))
     } else {
-        "".to_string()
-    };
-    let exec_path = if exec_path.is_empty() {
         None
-    } else {
-        Some(exec_path.as_str())
     };
+    let exec_path = exec_path.as_deref();
     let use_player = m.is_present("use_player");
     let copy_from_guest = m.is_present("copy_from_guest");
     let mut cmd = get_cmd(tool, exec_path, use_player);
@@ -249,13 +252,13 @@ fn main() {
     let vm_name = input_vm_name(&m, "vm_name", cmd.as_ref());
     match tool {
         Tool::VirtualBox | Tool::VMware => {
-            cmd.gu(Some(input(&m, "gu", "Guest username")));
-            cmd.gp(Some(input_password(&m, "gp")));
+            cmd.gu(Some(input(&m, "guest_username", "Guest username")));
+            cmd.gp(Some(input_password(&m, "guest_password")));
         }
         Tool::HyperV => {
             if copy_from_guest {
-                cmd.gu(Some(input(&m, "gu", "Guest username")));
-                cmd.gp(Some(input_password(&m, "gp")));
+                cmd.gu(Some(input(&m, "guest_username", "Guest username")));
+                cmd.gp(Some(input_password(&m, "guest_password")));
             }
         }
     }
