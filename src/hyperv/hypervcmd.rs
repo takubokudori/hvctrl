@@ -532,7 +532,7 @@ pub mod raw {
             .collect())
     }
 
-    /// Gets a power state of the VM.
+    /// Gets the power state of a VM.
     pub fn get_power_state(
         pwsh_path: &str,
         vm: &str,
@@ -633,7 +633,7 @@ pub mod raw {
         }
     }
 
-    /// Gets a list of checkpoints of the VM.
+    /// Gets a list of checkpoints of a VM.
     ///
     /// For more information, See [Get-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/get-vmsnapshot).
     pub fn get_vm_snapshot(
@@ -714,7 +714,7 @@ pub mod raw_unescaped {
     use serde::Deserialize;
     use std::ffi::OsStr;
 
-    /// Gets a power state of the VM.
+    /// Gets the power state of a VM.
     ///
     /// # Safety
     ///
@@ -966,7 +966,7 @@ pub mod raw_unescaped {
         Ok(())
     }
 
-    /// Gets a list of checkpoints of the VM.
+    /// Gets the list of checkpoints of a VM.
     ///
     /// For more information, See [Get-VMSnapshot](https://docs.microsoft.com/en-us/powershell/module/hyper-v/get-vmsnapshot).
     ///

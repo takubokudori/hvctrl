@@ -68,8 +68,8 @@ pub(crate) fn exec_cmd(cmd: &mut Command) -> VmResult<(String, String)> {
     }
 }
 
-#[allow(dead_code)]
 /// Executes `cmd` and Returns `(stdout, stderr)`.
+#[allow(dead_code)]
 pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
     dbg_cmd(cmd);
     match cmd.output() {
@@ -81,6 +81,16 @@ pub(crate) fn exec_cmd_utf8(cmd: &mut Command) -> VmResult<(String, String)> {
         )),
         Err(x) => vmerr!(ErrorKind::ExecutionFailed(x.to_string())),
     }
+}
+
+#[allow(dead_code)]
+pub(crate) fn get_filename(p: &str) -> &str {
+    for (i, c) in p.chars().rev().enumerate() {
+        if c == '/' || c == '\\' {
+            return &p[(p.len() - i)..];
+        }
+    }
+    p
 }
 
 #[allow(dead_code)]
@@ -96,4 +106,15 @@ pub(crate) fn dbg_cmd(cmd: &Command) {
         writeln!(stdout).unwrap();
         stdout.flush().unwrap();
     }
+}
+
+#[test]
+fn test_get_filename() {
+    assert_eq!(get_filename("test"), "test");
+    assert_eq!(get_filename(r"C:\Users\user\Desktop"), "Desktop");
+    assert_eq!(get_filename(r"C:\Users\user/Desktop"), "Desktop");
+    assert_eq!(get_filename(r"C:\Users\user\Desktop\"), "");
+    assert_eq!(get_filename(r"C:\Users\user/Desktop\test.txt"), "test.txt");
+    assert_eq!(get_filename(r"/home/user/test.txt"), "test.txt");
+    assert_eq!(get_filename(r"/tmp/"), "");
 }

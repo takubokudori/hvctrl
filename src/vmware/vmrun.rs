@@ -1,5 +1,5 @@
 use crate::{
-    exec_cmd_utf8,
+    exec_cmd_utf8, get_filename,
     types::*,
     vmware::{read_vmware_inventory, read_vmware_preferences},
 };
@@ -768,7 +768,17 @@ impl GuestCmd for VmRun {
         from_guest_path: &str,
         to_host_path: &str,
     ) -> VmResult<()> {
-        self.copy_file_from_guest_to_host(from_guest_path, to_host_path)
+        if std::path::Path::new(to_host_path).is_dir() {
+            let to_host_path = format!(
+                "{}{}{}",
+                to_host_path,
+                std::path::MAIN_SEPARATOR,
+                get_filename(from_guest_path)
+            );
+            self.copy_file_from_guest_to_host(from_guest_path, &to_host_path)
+        } else {
+            self.copy_file_from_guest_to_host(from_guest_path, to_host_path)
+        }
     }
 
     fn copy_from_host_to_guest(
@@ -803,12 +813,11 @@ impl GuestCmd for VmRun {
         } else if self.directory_exists_in_guest(to_guest_path)? {
             // directory
             let file_name = get_file_name(host_path, from_host_path)?;
-            let guest_path_separator =
-                if to_guest_path.starts_with('/') {
-                    '/'
-                } else {
-                    '\\'
-                };
+            let guest_path_separator = if to_guest_path.starts_with('/') {
+                '/'
+            } else {
+                '\\'
+            };
             let to_guest_path = format!(
                 "{}{}{}",
                 to_guest_path, guest_path_separator, file_name

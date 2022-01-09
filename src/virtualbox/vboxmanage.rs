@@ -757,8 +757,6 @@ impl PowerCmd for VBoxManage {
     fn suspend(&self) -> VmResult<()> {
         let mut ok_flag = false;
         loop {
-            // NotRunningが返ってきたらSuspendに成功した証なのだが、
-            //
             let status = self.save_state_vm();
             match status {
                 Ok(_) => {
